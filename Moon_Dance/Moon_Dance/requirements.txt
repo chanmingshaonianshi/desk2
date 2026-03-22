@@ -1,0 +1,11 @@
+numpy>=1.21.0
+pandas
+tk
+requests
+fastapi
+uvicorn
+pydantic
+Flask
+Flask-Cors
+PyJWT
+pyOpenSSL
