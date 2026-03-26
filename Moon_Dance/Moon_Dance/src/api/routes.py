@@ -11,15 +11,24 @@ import uuid
 from typing import Any, Dict, Set, Tuple
 
 from flask import Blueprint, jsonify, request
+import logging
 
 from src.api.auth import token_required
-from src.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR
+from src.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR, INGEST_TOKEN
 from src.utils.excel_exporter import export_daily_report
 from src.utils.json_db import append_record, append_realtime_log
+from src.core.tasks import save_data
 
 api_bp = Blueprint("api", __name__)
 
 _IDS_LOCK = threading.RLock()
+
+_logger = logging.getLogger("api")
+if not _logger.handlers:
+    _logger.setLevel(logging.INFO)
+    _h = logging.StreamHandler()
+    _h.setLevel(logging.INFO)
+    _logger.addHandler(_h)
 
 
 def _json_error(message: str, status_code: int) -> Tuple[Any, int]:
@@ -147,3 +156,26 @@ def upload_v1() -> Tuple[Any, int]:
 def upload_legacy() -> Tuple[Any, int]:
     return upload_v1()
 
+
+@api_bp.post("/api/v2/ingest")
+def ingest_v2() -> Tuple[Any, int]:
+    payload = request.get_json(silent=True) or {}
+    auth_header = request.headers.get("Authorization", "")
+    token = ""
+    if auth_header.startswith("Bearer "):
+        token = auth_header.split(" ", 1)[1].strip()
+    elif auth_header.startswith("Token "):
+        token = auth_header.split(" ", 1)[1].strip()
+    else:
+        token = str(payload.get("token", "")).strip()
+    _logger.info(f"ingest arrived, auth_header={'present' if auth_header else 'absent'}")
+    if not token or token != INGEST_TOKEN:
+        _logger.info("ingest unauthorized")
+        return jsonify({"error": "Unauthorized"}), 401
+    _logger.info("ingest authorized")
+    try:
+        save_data.delay(payload)
+    except Exception as e:
+        _logger.error(f"enqueue failed: {e}")
+        return jsonify({"error": "Queue error"}), 500
+    return jsonify({"status": "success", "message": "Data queued"}), 202

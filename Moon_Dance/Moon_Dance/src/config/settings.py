@@ -42,6 +42,9 @@ PROCESSED_IDS_FILE = os.path.join(REALTIME_LOG_DIR, "processed_ids.json")
 UPLOAD_LOG_FILE = os.path.join(REALTIME_LOG_DIR, "upload_log.jsonl")
 UPLOAD_REPORT_DIR = os.path.join(REPORTS_DIR, "uploads")
 
+REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+INGEST_TOKEN = os.environ.get("INGEST_TOKEN", "change_me_token")
+DATA_LOG_FILE = os.path.join(DATA_DIR, "data_log.txt")
 # 设备颜色配置
 DEVICE_COLORS = [
     "#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd",

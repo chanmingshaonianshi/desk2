@@ -134,7 +134,11 @@ def main() -> None:
         return
 
     app = create_app()
-    app.run(host=args.host, port=args.port, ssl_context=(cert_path, key_path), threaded=True)
+    use_ssl = os.environ.get("API_USE_SSL", "1") == "1"
+    if use_ssl:
+        app.run(host=args.host, port=args.port, ssl_context=(cert_path, key_path), threaded=True)
+    else:
+        app.run(host=args.host, port=args.port, threaded=True)
 
 
 if __name__ == "__main__":

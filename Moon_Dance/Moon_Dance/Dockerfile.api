@@ -30,7 +30,7 @@ COPY . .
 RUN mkdir -p data/realtime_logs data/reports/uploads certs
 
 # 暴露API端口
-EXPOSE 443
+EXPOSE 8000
 
 # 启动API服务
 CMD ["python3", "-u", "main_api.py"]

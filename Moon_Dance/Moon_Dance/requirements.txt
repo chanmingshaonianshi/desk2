@@ -9,3 +9,5 @@ Flask
 Flask-Cors
 PyJWT
 pyOpenSSL
+celery
+redis

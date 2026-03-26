@@ -51,13 +51,14 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - API_HOST=0.0.0.0
-      - API_PORT=443
+      - API_PORT=8000
+      - API_USE_SSL=0
       - API_CERT_CN=localhost
     volumes:
       - api_data:/app/data
       - ./certs:/app/certs:ro
     expose:
-      - "443"
+      - "8000"
     depends_on:
       - redis
     networks:
@@ -69,7 +70,7 @@ services:
       context: .
       dockerfile: Dockerfile.api
     restart: always
-    command: celery -A src.core.worker worker --loglevel=info --concurrency=4
+    command: celery -A src.core.tasks worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
     volumes:
