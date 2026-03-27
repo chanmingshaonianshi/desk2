@@ -4,9 +4,9 @@ import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from src.config.settings import BASE_PATH
-from src.core.posture_analyzer import generate_daily_data_for_device
-from src.utils.excel_exporter import export_daily_report
+from simulator.config.settings import BASE_PATH
+from simulator.core.posture_analyzer import generate_daily_data_for_device
+from simulator.utils.excel_exporter import export_daily_report
 
 
 def get_output_dir():

@@ -2,7 +2,7 @@ import json
 import os
 import time
 import threading
-from src.config.settings import BASE_PATH
+from simulator.config.settings import BASE_PATH
 
 DB_DIR = os.path.join(BASE_PATH, "data")
 if not os.path.exists(DB_DIR):

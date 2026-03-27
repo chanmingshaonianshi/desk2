@@ -8,8 +8,8 @@ import threading
 import os
 import requests
 import json
-from src.core.posture_analyzer import calculate_ratio, get_assessment, generate_force_data
-from src.core.pressure_surface import generate_pressure_surface
+from simulator.core.posture_analyzer import calculate_ratio, get_assessment, generate_force_data
+from simulator.core.pressure_surface import generate_pressure_surface
 
 
 class DeviceSimulator:

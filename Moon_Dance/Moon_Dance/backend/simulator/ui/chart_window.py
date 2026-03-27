@@ -6,8 +6,8 @@
 import tkinter as tk
 from tkinter import ttk
 import random
-from src.config.settings import DEVICE_COLORS, CHART_WINDOW_SIZE, CHART_TITLE_FONT, CHART_AXIS_FONT, CHART_HOUR_RANGE, CHART_MAX_RATIO
-from src.core.posture_analyzer import calculate_daily_score
+from simulator.config.settings import DEVICE_COLORS, CHART_WINDOW_SIZE, CHART_TITLE_FONT, CHART_AXIS_FONT, CHART_HOUR_RANGE, CHART_MAX_RATIO
+from simulator.core.posture_analyzer import calculate_daily_score
 
 
 class ChartWindow:

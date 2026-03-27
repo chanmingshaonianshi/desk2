@@ -4,6 +4,12 @@
 自动扩容监控脚本
 根据Redis消息队列长度自动调整API服务副本数量
 """
+"""
+文件：auto_scaler.py
+实现了什么：基于负载监控的 Docker 容器自动扩缩容脚本（Auto-Scaler）。
+怎么实现的：通过一个无限循环的 while True，定期向 Nginx/API 发送 HTTP 测试请求（探测接口延迟和健康状态），并利用 Python 的 subprocess 模块调用 docker compose ps 命令统计当前存活的 API 容器副本数。如果发现访问延迟过高，自动执行 docker compose scale api=N 来增加容器实例数量；如果负载极低，则缩减容器以节省服务器资源。
+为什么实现：满足项目验收中“阶段 2：编写一个监控脚本，能够根据模拟的访问压力自动扩容 Docker 容器数量”的明确要求。赋予系统弹性伸缩能力。
+"""
 import time
 import subprocess
 import redis

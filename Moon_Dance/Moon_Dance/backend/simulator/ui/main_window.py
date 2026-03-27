@@ -8,13 +8,13 @@ from tkinter import ttk, scrolledtext, messagebox
 import threading
 import queue
 import time
-from src.config.settings import WINDOW_TITLE, WINDOW_SIZE, WINDOW_BG
-from src.core.device_simulator import run_device_measurement
-from src.core.report_manager import export_daily_reports_concurrently
-from src.ui.chart_window import ChartWindow
-from src.ui.pressure_window import PressureSurfaceWindow
-from src.utils.excel_exporter import export_history_data
-from src.utils.json_db import load_db, save_db, append_realtime_log
+from simulator.config.settings import WINDOW_TITLE, WINDOW_SIZE, WINDOW_BG
+from simulator.core.device_simulator import run_device_measurement
+from simulator.core.report_manager import export_daily_reports_concurrently
+from simulator.ui.chart_window import ChartWindow
+from simulator.ui.pressure_window import PressureSurfaceWindow
+from simulator.utils.excel_exporter import export_history_data
+from simulator.utils.json_db import load_db, save_db, append_realtime_log
 
 
 class CushionSimulatorApp:

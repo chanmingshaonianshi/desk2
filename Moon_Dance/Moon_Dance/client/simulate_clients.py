@@ -3,6 +3,12 @@ import time
 import random
 import requests
 import urllib3
+"""
+文件：simulate_clients.py
+实现了什么：高并发多线程的传感器数据模拟器（HTTP 客户端）。
+怎么实现的：使用 argparse 接收启动参数（并发数、目标 API 地址）。利用 concurrent.futures.ThreadPoolExecutor 创建多个线程，每个线程模拟一个物理设备，使用 requests 库构造包含 Bearer Token 和随机传感器数据的 JSON 负载，并循环向指定的后端接口发送 POST 请求（跳过 SSL 验证以适配本地测试和自定义域名）。
+为什么实现：为了测试服务器在真实业务场景下的抗压能力（高并发处理能力），并在演示时制造真实的“多设备数据流”，直观展示前后端联调效果和负载均衡效果。
+"""
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 

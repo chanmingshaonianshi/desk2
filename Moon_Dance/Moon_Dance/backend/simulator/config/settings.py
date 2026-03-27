@@ -3,6 +3,12 @@
 """
 配置文件
 """
+"""
+文件：settings.py
+实现了什么：系统的全局配置中心。
+怎么实现的：使用 os.getenv() 从系统环境变量中读取配置（如 Redis 地址、API 端口、SSL 开关等），如果环境变量不存在则使用预设的默认值（例如本地测试时的 redis://localhost:6379/0）。
+为什么实现：遵循“Twelve-Factor App”原则，将配置与代码分离。这样同一套代码可以在本地测试环境、Docker 容器环境和云端生产环境中无缝运行，只需在 docker-compose.yml 中注入不同的环境变量即可，避免了硬编码路径导致的错误。
+"""
 import os
 import sys
 

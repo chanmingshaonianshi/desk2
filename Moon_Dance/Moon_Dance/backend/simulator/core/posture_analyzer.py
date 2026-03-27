@@ -5,7 +5,7 @@
 """
 import random
 import time
-from src.config.settings import RATIO_NORMAL, RATIO_WARNING
+from simulator.config.settings import RATIO_NORMAL, RATIO_WARNING
 
 
 def calculate_ratio(f_left, f_right):

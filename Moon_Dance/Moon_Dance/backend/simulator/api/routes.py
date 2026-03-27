@@ -10,14 +10,20 @@ import time
 import uuid
 from typing import Any, Dict, Set, Tuple
 
+"""
+文件：routes.py
+实现了什么：定义了 Flask 应用的核心路由（URL 路径）及其对应的处理逻辑。
+怎么实现的：使用 Flask 的 Blueprint（蓝图）机制注册了 /api/v2/ingest（数据上传接口）和 /health（健康检查接口）。在 /ingest 接口中，首先调用 @require_auth 进行 Token 鉴权，验证通过后提取 JSON 数据，通过 Celery 的 delay() 方法将数据异步发送到 Redis 消息队列中，并立即返回 202 响应给客户端。同时加入了防重传的幂等性逻辑。
+为什么实现：这是整个数据服务系统的核心入口（Controller 层）。通过异步消息队列解耦了数据接收和数据处理，极大提升了系统应对高并发请求（如多个传感器同时上传数据）的能力，防止 API 阻塞。
+"""
 from flask import Blueprint, jsonify, request
 import logging
 
-from src.api.auth import token_required
-from src.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR, INGEST_TOKEN
-from src.utils.excel_exporter import export_daily_report
-from src.utils.json_db import append_record, append_realtime_log
-from src.core.tasks import save_data
+from simulator.api.auth import token_required
+from simulator.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR, INGEST_TOKEN
+from simulator.utils.excel_exporter import export_daily_report
+from simulator.utils.json_db import append_record, append_realtime_log
+from simulator.core.tasks import save_data
 
 api_bp = Blueprint("api", __name__)
 

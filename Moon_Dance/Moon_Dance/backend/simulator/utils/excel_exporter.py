@@ -5,8 +5,8 @@ Excel导出工具
 """
 import os
 import time
-from src.config.settings import BASE_PATH
-from src.core.posture_analyzer import calculate_daily_score
+from simulator.config.settings import BASE_PATH
+from simulator.core.posture_analyzer import calculate_daily_score
 
 
 def _get_messagebox():

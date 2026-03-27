@@ -4,6 +4,12 @@
 from __future__ import annotations
 
 import argparse
+"""
+文件：main_api.py
+实现了什么：Flask 后端微服务的主入口启动脚本。
+怎么实现的：实例化 Flask 应用 app，注册来自 routes 模块的 api_bp 蓝图。在启动前，检查环境变量以决定是否加载 SSL 证书（cert.pem / key.key）开启 HTTPS 模式，最后通过 app.run() 在指定端口（默认 8000）启动服务。
+为什么实现：作为 Docker 容器（backend/Dockerfile）启动时的主要执行脚本。提供了独立的、轻量级的 Web 服务器运行环境，是处理所有网络请求的总闸门。
+"""
 import os
 import time
 from typing import Tuple
@@ -12,9 +18,9 @@ from flask import Flask, jsonify
 from flask_cors import CORS
 from OpenSSL import crypto
 
-from src.api.auth import auth_bp
-from src.api.routes import api_bp
-from src.config.settings import BASE_PATH, CA_CERT_FILE, CA_KEY_FILE, CERT_DIR, CERT_FILE, KEY_FILE
+from simulator.api.auth import auth_bp
+from simulator.api.routes import api_bp
+from simulator.config.settings import BASE_PATH, CA_CERT_FILE, CA_KEY_FILE, CERT_DIR, CERT_FILE, KEY_FILE
 
 
 def _is_ip(value: str) -> bool:

@@ -13,9 +13,9 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 
 def run_no_gui(device_count=10, duration=0):
     import time
-    from src.core.device_simulator import DeviceSimulator
-    from src.utils.json_db import append_record, append_realtime_log
-    from src.core.report_manager import export_daily_reports_concurrently
+    from simulator.core.device_simulator import DeviceSimulator
+    from simulator.utils.json_db import append_record, append_realtime_log
+    from simulator.core.report_manager import export_daily_reports_concurrently
 
     msg_queue = queue.Queue()
 
@@ -83,7 +83,7 @@ def main():
             run_no_gui(device_count=args.device_count, duration=args.duration)
             return
 
-        from src.ui.main_window import CushionSimulatorApp
+        from simulator.ui.main_window import CushionSimulatorApp
         
         app = CushionSimulatorApp()
         app.run()

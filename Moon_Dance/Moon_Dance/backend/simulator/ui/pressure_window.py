@@ -6,9 +6,9 @@
 import tkinter as tk
 from tkinter import ttk
 import time
-from src.config.settings import DEVICE_COLORS
-from src.core.pressure_surface import generate_pressure_surface, pressure_to_color
-from src.core.posture_analyzer import generate_force_data, calculate_ratio, get_assessment, calculate_daily_score
+from simulator.config.settings import DEVICE_COLORS
+from simulator.core.pressure_surface import generate_pressure_surface, pressure_to_color
+from simulator.core.posture_analyzer import generate_force_data, calculate_ratio, get_assessment, calculate_daily_score
 
 
 class PressureSurfaceWindow:
