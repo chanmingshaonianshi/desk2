@@ -70,7 +70,7 @@ services:
       context: ../backend
       dockerfile: Dockerfile
     restart: always
-    command: celery -A src.core.tasks worker --loglevel=info --concurrency=4
+    command: celery -A simulator.core.tasks worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
     volumes:
