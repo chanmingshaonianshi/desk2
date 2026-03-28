@@ -33,9 +33,9 @@ SCALE_STEP = 1
 def get_current_workers():
     """获取当前运行的worker容器数量"""
     try:
-        # 假设服务名为 worker
+        # 获取 worker 容器数量，需要指定 compose 文件
         result = subprocess.run(
-            ['docker', 'compose', 'ps', '-q', 'worker'],
+            ['docker', 'compose', '-f', 'docker-compose.yml', '-f', 'docker-compose-nginx.yml', 'ps', '-q', 'worker'],
             capture_output=True, text=True, check=True
         )
         # 每行一个容器ID，统计非空行数
@@ -51,9 +51,9 @@ def scale_workers(target_count):
     """执行Docker Compose扩缩容命令"""
     print(f"🚀 正在将 worker 容器数量调整为: {target_count}")
     try:
-        # 使用 docker compose up -d --scale worker=N
+        # 使用 docker compose up -d --scale worker=N，需要指定 compose 文件
         subprocess.run(
-            ['docker', 'compose', 'up', '-d', '--scale', f'worker={target_count}', '--no-recreate'],
+            ['docker', 'compose', '-f', 'docker-compose.yml', '-f', 'docker-compose-nginx.yml', 'up', '-d', '--scale', f'worker={target_count}', '--no-recreate'],
             check=True
         )
         print(f"✅ 扩缩容完成，当前 worker 数量: {target_count}")
