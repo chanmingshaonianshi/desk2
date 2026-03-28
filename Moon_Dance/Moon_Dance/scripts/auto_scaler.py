@@ -12,6 +12,10 @@ import time
 import subprocess
 import redis
 
+# 部署目录路径，确保 docker compose 命令在此目录下执行
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DEPLOY_DIR = os.path.join(BASE_DIR, 'deploy')
+
 # Redis 配置 (默认连接本地docker映射的Redis)
 REDIS_HOST = os.getenv('REDIS_HOST', 'localhost')
 REDIS_PORT = int(os.getenv('REDIS_PORT', 6379))
@@ -33,9 +37,10 @@ SCALE_STEP = 1
 def get_current_workers():
     """获取当前运行的worker容器数量"""
     try:
-        # 获取 worker 容器数量，需要指定 compose 文件
+        # 获取 worker 容器数量，需要指定 compose 文件并在 deploy 目录下执行
         result = subprocess.run(
             ['docker', 'compose', '-f', 'docker-compose.yml', '-f', 'docker-compose-nginx.yml', 'ps', '-q', 'worker'],
+            cwd=DEPLOY_DIR,
             capture_output=True, text=True, check=True
         )
         # 每行一个容器ID，统计非空行数
@@ -51,9 +56,10 @@ def scale_workers(target_count):
     """执行Docker Compose扩缩容命令"""
     print(f"🚀 正在将 worker 容器数量调整为: {target_count}")
     try:
-        # 使用 docker compose up -d --scale worker=N，需要指定 compose 文件
+        # 使用 docker compose up -d --scale worker=N，需要在 deploy 目录下执行
         subprocess.run(
             ['docker', 'compose', '-f', 'docker-compose.yml', '-f', 'docker-compose-nginx.yml', 'up', '-d', '--scale', f'worker={target_count}', '--no-recreate'],
+            cwd=DEPLOY_DIR,
             check=True
         )
         print(f"✅ 扩缩容完成，当前 worker 数量: {target_count}")
