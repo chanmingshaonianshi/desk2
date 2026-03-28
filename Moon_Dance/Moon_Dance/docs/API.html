@@ -1,0 +1,314 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Moon_Dance API 文档</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f8f9fa;
+        }
+        h1 {
+            color: #2c3e50;
+            border-bottom: 3px solid #3498db;
+            padding-bottom: 10px;
+            margin-bottom: 30px;
+        }
+        h2 {
+            color: #2c3e50;
+            margin: 30px 0 20px 0;
+            padding-left: 10px;
+            border-left: 4px solid #3498db;
+        }
+        h3 {
+            color: #34495e;
+            margin: 25px 0 15px 0;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 15px 0;
+            background: white;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        th, td {
+            padding: 12px 15px;
+            text-align: left;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        th {
+            background-color: #3498db;
+            color: white;
+            font-weight: 600;
+        }
+        tr:hover {
+            background-color: #f5f5f5;
+        }
+        pre {
+            background-color: #2d2d2d;
+            color: #ccc;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            margin: 15px 0;
+            font-family: "Consolas", "Monaco", monospace;
+        }
+        .endpoint {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .method {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            color: white;
+            font-weight: 600;
+            margin-right: 10px;
+        }
+        .get { background-color: #61affe; }
+        .post { background-color: #49cc90; }
+        .status-200 { color: #49cc90; font-weight: 600; }
+        .status-202 { color: #fca130; font-weight: 600; }
+        .status-400 { color: #f93e3e; font-weight: 600; }
+        .status-403 { color: #f93e3e; font-weight: 600; }
+        .badge {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        .auth-required { background-color: #fca130; color: white; }
+        .no-auth { background-color: #49cc90; color: white; }
+    </style>
+</head>
+<body>
+    <h1>Moon_Dance API 文档</h1>
+
+    <div class="endpoint">
+        <h2>基础信息</h2>
+        <ul>
+            <li><strong>通信协议：</strong>HTTPS</li>
+            <li><strong>请求格式：</strong>JSON</li>
+            <li><strong>响应格式：</strong>JSON</li>
+            <li><strong>默认端口：</strong>443</li>
+            <li><strong>鉴权方式：</strong>JWT Bearer Token（登录接口除外）</li>
+        </ul>
+    </div>
+
+    <h2>接口列表</h2>
+
+    <div class="endpoint">
+        <h3>
+            <span class="method get">GET</span>
+            /health
+            <span class="badge no-auth">不需要鉴权</span>
+        </h3>
+        <p><strong>接口描述：</strong>检查服务是否正常运行</p>
+        <p><strong>请求参数：</strong>无</p>
+        <p><strong>响应示例：</strong></p>
+        <pre>{
+  "ok": true
+}</pre>
+        <p><strong>响应状态码：</strong></p>
+        <ul>
+            <li><span class="status-200">200</span>：服务正常</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3>
+            <span class="method post">POST</span>
+            /login
+            <span class="badge no-auth">不需要鉴权</span>
+        </h3>
+        <p><strong>接口描述：</strong>使用app_id和app_secret获取访问令牌</p>
+        <p><strong>请求参数：</strong></p>
+        <table>
+            <tr>
+                <th>参数名</th>
+                <th>类型</th>
+                <th>必填</th>
+                <th>描述</th>
+            </tr>
+            <tr>
+                <td>app_id</td>
+                <td>string</td>
+                <td>是</td>
+                <td>应用ID，默认值：<code>moon_dance_app</code></td>
+            </tr>
+            <tr>
+                <td>app_secret</td>
+                <td>string</td>
+                <td>是</td>
+                <td>应用密钥，默认值：<code>moon_dance_secret</code></td>
+            </tr>
+        </table>
+        <p><strong>请求示例：</strong></p>
+        <pre>{
+  "app_id": "moon_dance_app",
+  "app_secret": "moon_dance_secret"
+}</pre>
+        <p><strong>响应示例：</strong></p>
+        <pre>{
+  "ok": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}</pre>
+        <p><strong>响应状态码：</strong></p>
+        <ul>
+            <li><span class="status-200">200</span>：登录成功</li>
+            <li><span class="status-400">400</span>：缺少必要参数</li>
+            <li><span class="status-403">403</span>：app_id或app_secret错误</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3>
+            <span class="method post">POST</span>
+            /api/v1/upload
+            <span class="badge auth-required">需要鉴权</span>
+        </h3>
+        <p><strong>接口描述：</strong>上传坐姿监测数据，异步处理</p>
+        <p><strong>幂等性：</strong>支持，通过request_id去重，重复请求返回200</p>
+        <p><strong>请求参数：</strong></p>
+        <table>
+            <tr>
+                <th>参数名</th>
+                <th>类型</th>
+                <th>必填</th>
+                <th>描述</th>
+            </tr>
+            <tr>
+                <td>request_id</td>
+                <td>string</td>
+                <td>是</td>
+                <td>幂等请求ID，必须是合法UUID</td>
+            </tr>
+            <tr>
+                <td>device_id</td>
+                <td>string</td>
+                <td>是</td>
+                <td>设备ID，格式如<code>device_001</code></td>
+            </tr>
+            <tr>
+                <td>timestamp</td>
+                <td>number</td>
+                <td>是</td>
+                <td>数据采集时间戳，毫秒级</td>
+            </tr>
+            <tr>
+                <td>sensors</td>
+                <td>object</td>
+                <td>是</td>
+                <td>传感器数据</td>
+            </tr>
+            <tr>
+                <td>sensors.left_force_n</td>
+                <td>number</td>
+                <td>是</td>
+                <td>左侧压力值（单位：牛）</td>
+            </tr>
+            <tr>
+                <td>sensors.right_force_n</td>
+                <td>number</td>
+                <td>是</td>
+                <td>右侧压力值（单位：牛）</td>
+            </tr>
+            <tr>
+                <td>analysis</td>
+                <td>object</td>
+                <td>否</td>
+                <td>预分析结果</td>
+            </tr>
+            <tr>
+                <td>analysis.deviation_ratio</td>
+                <td>number</td>
+                <td>否</td>
+                <td>坐姿偏差率（0-1）</td>
+            </tr>
+        </table>
+        <p><strong>请求示例：</strong></p>
+        <pre>{
+  "request_id": "550e8400-e29b-41d4-a716-446655440000",
+  "device_id": "device_001",
+  "timestamp": 1700000000000,
+  "sensors": {
+    "left_force_n": 300.0,
+    "right_force_n": 280.0
+  },
+  "analysis": {
+    "deviation_ratio": 0.034
+  }
+}</pre>
+        <p><strong>响应示例：</strong></p>
+        <pre>{
+  "ok": true,
+  "message": "数据已接收，正在异步处理",
+  "request_id": "550e8400-e29b-41d4-a716-446655440000"
+}</pre>
+        <p><strong>响应状态码：</strong></p>
+        <ul>
+            <li><span class="status-202">202</span>：数据已接收，正在处理</li>
+            <li><span class="status-200">200</span>：重复请求，数据已处理</li>
+            <li><span class="status-400">400</span>：参数错误（缺少request_id或格式非法）</li>
+            <li><span class="status-403">403</span>：未授权或Token无效</li>
+        </ul>
+    </div>
+
+    <div class="endpoint">
+        <h3>
+            <span class="method post">POST</span>
+            /api/upload_data
+            <span class="badge auth-required">需要鉴权</span>
+        </h3>
+        <p><strong>接口描述：</strong>与V1上传接口完全一致，仅路径不同，用于兼容旧版本客户端</p>
+        <p><strong>参数/响应：</strong>同<code>/api/v1/upload</code></p>
+    </div>
+
+    <div class="endpoint">
+        <h2>错误码说明</h2>
+        <table>
+            <tr>
+                <th>状态码</th>
+                <th>说明</th>
+            </tr>
+            <tr>
+                <td><span class="status-200">200</span></td>
+                <td>成功/重复请求</td>
+            </tr>
+            <tr>
+                <td><span class="status-202">202</span></td>
+                <td>已接受异步处理</td>
+            </tr>
+            <tr>
+                <td><span class="status-400">400</span></td>
+                <td>请求参数错误</td>
+            </tr>
+            <tr>
+                <td><span class="status-403">403</span></td>
+                <td>鉴权失败/无权限</td>
+            </tr>
+            <tr>
+                <td><span class="status-403">500</span></td>
+                <td>服务内部错误</td>
+            </tr>
+        </table>
+    </div>
+</body>
+</html>
