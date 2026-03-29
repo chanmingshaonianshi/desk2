@@ -2,119 +2,190 @@
 Moon_Dance 数据服务系统 - 项目演示命令指南
 =======================================================
 
-服务器地址：124.220.79.133
-登录账号：ubuntu
-登录密码：9?d~+4%p8aQj]CYA
-
-=======================================================
-【完整演示流程】从头到尾的终端命令
-=======================================================
+服务器登录：ssh ubuntu@124.220.79.133
+9?d~+4%p8aQj]CYA
 
 -------------------------------------------------------
-第一步：登录服务器
+常用：本地提交后，一键更新服务器并重启部署
 -------------------------------------------------------
-ssh ubuntu@124.220.79.133
-# 输入密码：9?d~+4%p8aQj]CYA
+本地提交推送：
+git add .
+git commit -m "更新了命令 并且将多余终端命令删除了"
+git push origin main
 
--------------------------------------------------------
-第二步：启动后端集群（Nginx + 3个API + Redis + Worker）
--------------------------------------------------------
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose up -d --build
+   服务器一键更新部署：
+ssh ubuntu@124.220.79.133 'cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh'
 
-# 查看集群状态（应该看到 nginx、api-1/2/3、redis、worker 共6个容器）
-docker ps
+如果已经登录进服务器，也可以直接执行：
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
 
--------------------------------------------------------
-第三步：获取Token并启动30个并发客户端
--------------------------------------------------------
-# 一行命令获取Token
-TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys, json; print(json.loads(sys.stdin.read())["token"])')
 
-# 验证Token是否获取成功
-echo "Token: $TOKEN"
 
-# 启动30个并发客户端（按Ctrl+C停止）
-docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 30 --interval 2 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
 
--------------------------------------------------------
-第四步：查看服务端日志（另开一个终端窗口）
--------------------------------------------------------
-# 查看API日志（显示负载均衡到api-1/2/3的过程）
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f api
-# 按Ctrl+C退出
 
-# 查看Worker日志（显示异步处理任务的过程）
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f worker
-# 按Ctrl+C退出
+
+
+
+
+
+
+亲爱的同学，请在明天给老师演示时，严格按照以下步骤进行。
+建议每一步操作前，先给老师讲解一下该命令的架构意义（这能大大加分）。
 
 -------------------------------------------------------
-第五步：演示结束，关闭所有容器
+第一步：登录服务器并进入项目目录
 -------------------------------------------------------
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down
+讲解词："老师好，现在我登录到我的云服务器，并进入项目根目录。我们的项目代码已经通过 Git 部署到了这里。"
 
+1. 登录云服务器 (如果你用的是本地 SSH 客户端，输入这个，如果用网页版可跳过)：
+   ssh ubuntu@124.220.79.133
 
-=======================================================
-【进阶演示】自动扩缩容机制
-=======================================================
-
--------------------------------------------------------
-第一步：确保集群已启动
--------------------------------------------------------
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d
+2. 进入项目目录 (这是你的真实路径)：
+   cd ~/desk2/Moon_Dance/Moon_Dance
 
 -------------------------------------------------------
-第二步：启动自动扩缩容监控（终端1）
+第二步：清理并重新启动整个后端集群架构
 -------------------------------------------------------
-cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/auto_scaler.py
+讲解词："为了保证演示的纯净性，我先将旧的容器清理掉，然后一键启动我们的分布式集群架构。这套架构包含了 Nginx 负载均衡、3个 Flask API 副本、Redis 消息队列以及 Celery 异步处理 Worker。"
 
--------------------------------------------------------
-第三步：启动100个客户端制造压力（终端2）
--------------------------------------------------------
-TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys, json; print(json.loads(sys.stdin.read())["token"])')
-docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+3. 一键更新并启动完整集群：
+   cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
 
-# 观察终端1中的auto_scaler自动扩容worker
-# 按Ctrl+C停止客户端后，观察自动缩容
+4. 查看集群运行状态：
+   docker ps
+   (给老师看一眼，解释说这里有 nginx、redis、worker 以及 3个 api 容器在同时运行)
 
--------------------------------------------------------
-第四步：关闭自动扩缩容监控
--------------------------------------------------------
-# 按Ctrl+C停止auto_scaler.py
-
--------------------------------------------------------
-第五步：关闭所有容器
--------------------------------------------------------
-cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down
-
-
-=======================================================
-【可选】手动测试API接口
-=======================================================
-
-# 获取Token
-curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}'
-
-# 手动上传数据（替换YOUR_TOKEN为上一步返回的token）
-curl -sk -X POST https://localhost/api/v1/upload -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_TOKEN' -d '{"device_id":"test_device","request_id":"550e8400-e29b-41d4-a716-446655440000","sensors":{"left_force_n":30.5,"right_force_n":40.2},"analysis":{"deviation_ratio":0.15}}'
-
-
-=======================================================
-【常用命令速查】
-=======================================================
-
-# 查看所有容器状态
-docker ps -a
-
-# 查看Nginx日志
+如果这里没有 nginx，或者后面执行 curl 报 `Failed to connect to localhost port 443`，先执行：
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs nginx
 
-# 查看API日志
+-------------------------------------------------------
+第三步：启动多并发模拟客户端 (30个并发)
+-------------------------------------------------------
+讲解词："后端集群就绪后，我现在启动 30 个并发的模拟客户端。它们会绕过云平台的域名拦截，直接向我的 API 持续发送带有安全 Token 的模拟传感器数据。"
+
+5. 获取认证 Token 并启动 30 个模拟客户端（分三步执行，更稳，也便于现场排错）：
+
+注意：下面命令必须在 Linux/bash 终端执行；复制时不要带 Markdown 里的反引号，不要把 URL 前后再额外加空格。如果 `echo "$LOGIN_RESPONSE"` 为空，先回到上一步检查 nginx 是否已经正常启动。
+
+第一步，先取登录响应：
+LOGIN_RESPONSE=$(curl -k -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}')
+echo "$LOGIN_RESPONSE"
+
+第二步，从响应里提取 Token：
+TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | python3 -c 'import sys, json; raw=sys.stdin.read().strip(); print(json.loads(raw)["token"])')
+echo "$TOKEN"
+
+第三步，启动 30 个并发模拟客户端：
+docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 30 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+
+-------------------------------------------------------
+第四步：展示数据交互的壮观日志 (核心加分项)
+-------------------------------------------------------
+讲解词："因为客户端在后台运行，现在我把它的实时日志调到前台展示。老师您可以看到，多个客户端正在高频并发发送数据，且每一条都收到了 Status: 202 的成功响应，这代表 Nginx 成功将请求负载均衡到了后端的 3 个 Flask 容器，鉴权通过，并已加入 Redis 异步队列。"
+
+6. 查看服务端集群接收数据的视角（另开一个终端窗口）：
+   cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f api
+   (让老师看看 api-1, api-2, api-3 是如何交替接客和处理数据的，然后按 Ctrl + C 退出查看)
+
+7. 查看 Worker 异步处理数据的视角：
+   cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f worker
+   (让老师看看 Celery Worker 是如何异步处理队列中的任务的，然后按 Ctrl + C 退出查看)
+
+-------------------------------------------------------
+第五步：恢复以前的本地 simulator -> 云端监控 -> 表格输出链路
+-------------------------------------------------------
+讲解词："如果老师想看从我本地电脑直接把模拟数据发到云端，我现在就用恢复好的 simulator_client.py。它会自动带 request_id 和 Bearer Token，把数据发到云端 API。云端这边我再打开表格监控，就能实时看到设备号、左右压力、偏差率和请求编号。"
+
+8. 先在云服务器上取一个 Token：
+   TOKEN=$(curl -sk -X POST https://www.myhjmycjh.tech/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c "import sys, json; print(json.load(sys.stdin)['token'])")
+   echo "$TOKEN"
+
+9. 在你自己的本地电脑上启动 simulator_client.py（PowerShell，分三行执行，不要整段一次粘贴）：
+   cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+   $env:API_BEARER_TOKEN="把上一步的TOKEN粘贴到这里"
+   python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --no-mq
+
+10. 在云服务器上打开表格模式监控（另开一个终端）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
+
+11. 如果要生成/确认表格报表（Excel）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
+
+-------------------------------------------------------
+第六步：手动测试 API 接口 (可选)
+-------------------------------------------------------
+讲解词："我也可以手动测试 API 接口，展示完整的鉴权和数据上传流程。"
+
+12. 获取 Token：
+   curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id": "moon_dance_app", "app_secret": "moon_dance_secret"}'
+
+13. 手动上传数据（替换 YOUR_TOKEN 为上一步获取的 token）：
+    curl -sk -X POST https://localhost/api/v1/upload -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_TOKEN' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440000", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
+
+-------------------------------------------------------
+第七步：演示结束，优雅地停止所有服务
+-------------------------------------------------------
+讲解词："演示完毕，为了节省服务器资源，我现在一键安全地停止并清理所有的容器。"
+
+14. 停止并移除服务端集群：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down
+
+-------------------------------------------------------
+第八步：演示自动扩缩容集群机制（优：验收标准核心）
+-------------------------------------------------------
+讲解词："为了达到'优'的验收标准，我们实现了基于消息队列的自动扩缩容架构。现在我启动 auto_scaler 脚本，它会实时监控 Redis 中 celery 队列的积压情况。如果瞬间涌入大量并发请求，队列超过阈值，它会自动通过 Docker 增加 worker 容器的数量；流量下降后，它又会自动缩容，从而实现对服务器资源的最优分配。"
+
+15. 运行自动扩缩容监控脚本 (在服务端终端执行)：
+    cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/auto_scaler.py
+
+16. 在另一个终端启动大量并发客户端制造压力（观察扩容）：
+    LOGIN_RESPONSE=$(curl -k -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}')
+    TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | python3 -c 'import sys, json; raw=sys.stdin.read().strip(); print(json.loads(raw)["token"])')
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    
+    (观察 auto_scaler 终端，当队列积压超过 50 时会自动扩容 worker)
+    (按 Ctrl+C 停止客户端后，观察队列下降并自动缩容)
+
+-------------------------------------------------------
+第九步：演示多机JMeter压力测试（优：验收标准核心）
+-------------------------------------------------------
+讲解词："我们还在至少3台本地电脑上，使用 JMeter 对数据服务器进行了压力测试。我已经编写好了包含 Token 鉴权和并发数据上传的 JMX 压测脚本，现在我来展示如何在本地执行压测，并导出报告测算每秒处理的最大请求数和业务数。"
+
+17. 执行 JMeter 测试：
+    - 将项目中的 `scripts/Moon_Dance_Stress_Test.jmx` 文件拷贝到 3 台装有 JMeter 的电脑上。
+    - 打开 JMeter，导入该 JMX 文件。
+    - 点击启动（绿色播放键），在"Summary Report（汇总报告）"监听器中，向老师展示 Throughput（吞吐量/每秒请求数）和错误率。
+    - 解释："该脚本先调用了 /login 接口获取 JWT Token，然后带着 Token 高频请求 /api/v1/upload 接口，模拟了具有完整鉴权过程的数据传输业务。"
+
+=======================================================
+常用命令速查
+=======================================================
+
+# 查看 Docker 容器状态
+docker ps -a
+
+# 查看 Nginx 日志
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs nginx
+
+# 查看 API 日志
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs api
 
-# 查看Worker日志
+# 查看 Worker 日志
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs worker
 
-# 测试Redis连接
+# 云端表格监控 upload 日志
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
+
+# 本地 simulator_client 直传云端
+cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+$env:API_BEARER_TOKEN="YOUR_TOKEN"
+python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --no-mq
+
+# 生成 Excel 表格报表
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
+
+# 查看 Redis 连接
 docker exec -it deploy-redis-1 redis-cli ping
 
 # 重启所有服务
@@ -123,23 +194,5 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose restart
 # 完全重建所有服务
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose build && docker compose up -d
 
-# 停止所有正在运行的moondance-client容器
-docker ps -q --filter ancestor=moondance-client | xargs -r docker stop
-
-
 =======================================================
-【一键更新部署】本地提交后更新服务器
-=======================================================
-
-# 本地提交
-git add .
-git commit -m "更新说明"
-git push origin main
-
-# 服务器一键更新（可在本地直接执行）
-ssh ubuntu@124.220.79.133 'cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose up -d --build'
-
-
-=======================================================
-演示圆满结束，祝你拿到"优"！
-=======================================================
+演示圆满结束，祝你拿到"优"！=======================================================

@@ -8,6 +8,7 @@
 """
 import os
 import time
+import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from src.config.settings import BASE_PATH
@@ -50,4 +51,27 @@ def export_daily_reports_concurrently(device_count=10, output_dir=None):
     errors.sort(key=lambda x: x[0])
 
     return len(errors) == 0, {"output_dir": target_dir, "files": results, "errors": errors}
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--device-count", type=int, default=10, help="Number of report files to generate")
+    parser.add_argument("--output-dir", default=None, help="Custom output directory")
+    args = parser.parse_args()
+
+    ok, result = export_daily_reports_concurrently(device_count=args.device_count, output_dir=args.output_dir)
+    if ok:
+        print(result["output_dir"])
+        for dev_id, file_path in result["files"]:
+            print(f"device_{dev_id:02d}: {file_path}")
+        return 0
+
+    print("报表生成失败")
+    for dev_id, error in result["errors"]:
+        print(f"device_{dev_id:02d}: {error}")
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
 

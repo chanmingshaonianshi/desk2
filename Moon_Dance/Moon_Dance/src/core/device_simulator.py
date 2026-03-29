@@ -13,29 +13,33 @@ import random
 import time
 import threading
 import os
+import uuid
 import requests
 import json
 from src.core.posture_analyzer import calculate_ratio, get_assessment, generate_force_data
 from src.core.pressure_surface import generate_pressure_surface
-from src.core.mq_client import MQClient
 
 
 class DeviceSimulator:
     """设备模拟器类"""
-    def __init__(self, device_id, msg_queue, use_mq=True):
+    def __init__(self, device_id, msg_queue, use_mq=True, api_url=None, api_token=None, verify_ssl=None):
         self.device_id = device_id
         self.msg_queue = msg_queue
         self.history_data = []
         self.running = True
         self.use_mq = use_mq
+        self.api_url = api_url if api_url is not None else os.environ.get("API_SERVER_URL", "http://127.0.0.1:8000/api/upload_data")
+        self.api_token = api_token if api_token is not None else os.environ.get("API_BEARER_TOKEN", "").strip()
+        if verify_ssl is None:
+            verify_env = os.environ.get("API_VERIFY_SSL", "1").strip().lower()
+            self.verify_ssl = verify_env not in {"0", "false", "no", "off"}
+        else:
+            self.verify_ssl = bool(verify_ssl)
         
-        # 获取 API 服务器地址 (解耦设计)
-        self.api_url = os.environ.get("API_SERVER_URL", "http://127.0.0.1:8000/api/upload_data")
-        
-        # 初始化MQ客户端
+        self.mq_client = None
         if self.use_mq:
+            from src.core.mq_client import MQClient
             self.mq_client = MQClient(f"device_{device_id:03d}")
-            # 启动后台重传线程
             self._start_retry_thread()
     
     def _start_retry_thread(self):
@@ -61,14 +65,12 @@ class DeviceSimulator:
         status_text, color_tag = get_assessment(ratio)
         current_time = int(time.time() * 1000)  # 毫秒级时间戳
         
-        # 生成矩阵数据 (用于完整数据上传)
         surface = generate_pressure_surface(f_left, f_right)
-        # 扁平化矩阵
         flat_surface = [val for row in surface for val in row]
         
-        # 记录历史数据 (符合 realtime_data schema)
         record = {
             "device_id": f"device_{self.device_id:03d}",
+            "request_id": str(uuid.uuid4()),
             "timestamp": current_time,
             "sensors": {
                 "left_force_n": round(f_left, 1),
@@ -77,7 +79,7 @@ class DeviceSimulator:
             },
             "analysis": {
                 "deviation_ratio": round(ratio, 4),
-                "posture_status": color_tag,  # 使用 color_tag 作为状态标识
+                "posture_status": color_tag,
                 "health_score": int(100 - ratio * 100) if ratio < 1 else 0
             },
             "matrix_snapshot": {
@@ -86,7 +88,6 @@ class DeviceSimulator:
             }
         }
         
-        # 为了兼容旧代码的显示逻辑
         record["time"] = time.strftime("%H:%M:%S")
         record["ratio"] = ratio
         record["f_left"] = f_left
@@ -94,14 +95,11 @@ class DeviceSimulator:
         
         self.history_data.append(record)
         
-        # 发送日志消息 (本地队列)
         log_msg = f"[{record['time']}] [设备编号 {self.device_id:02d}] 左侧: {f_left:.1f}N, 右侧: {f_right:.1f}N, 偏差率: {ratio*100:.1f}%, 状态: {status_text}"
         self.msg_queue.put((log_msg, color_tag, self.device_id, record))
         
-        # 异步发送数据到 API (不阻塞主线程)
         threading.Thread(target=self.send_to_api, args=(record,), daemon=True).start()
         
-        # 发送到MQ
         if self.use_mq:
             sensor_data = {
                 "left_force_n": f_left,
@@ -118,16 +116,24 @@ class DeviceSimulator:
     
     def send_to_api(self, record):
         """发送数据到 API 服务端"""
+        if not self.api_url:
+            return
         try:
-            # 清理掉用于 UI 兼容的非标准字段，只发送符合 Schema 的数据
             payload = {k: v for k, v in record.items() if k not in ["time", "ratio", "f_left", "f_right"]}
-            
-            response = requests.post(self.api_url, json=payload, timeout=2)
-            if response.status_code != 200:
+            headers = {}
+            if self.api_token:
+                headers["Authorization"] = f"Bearer {self.api_token}"
+
+            response = requests.post(
+                self.api_url,
+                json=payload,
+                headers=headers,
+                timeout=2,
+                verify=self.verify_ssl,
+            )
+            if response.status_code not in (200, 202):
                 print(f"[API Error] Device {self.device_id}: Status {response.status_code}")
         except Exception as e:
-            # 网络错误不应崩溃，仅打印日志
-            # print(f"[API Error] Device {self.device_id}: {e}")
             pass
     
     def get_history(self):
