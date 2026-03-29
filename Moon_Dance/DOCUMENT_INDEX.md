@@ -1,20 +1,14 @@
 # Moon_Dance 项目文档索引
-本文档说明 docs 目录下所有文档的用途和内容概览，以及最新的**“优”验收标准架构（基于消息队列的自动扩缩容集群）**说明。
+本文档只做文档导航。整体架构统一以 `docs/ARCHITECTURE.md` 为准，其余文档分别承担接口、MQ 细节、测试和部署说明，避免重复描述同一套内容。
 
 ---
 
-## 🚀 最新架构概览 (最高验收标准: 优)
+## 🚀 当前文档使用原则
 
-本项目已全面升级为**面向消息队列的自动扩缩容服务器集群架构**，完全满足《数据服务系统》最高验收标准：
-
-1. **安全与鉴权机制**：所有API请求强制校验 JWT Token，未授权返回 403 Forbidden。
-2. **高并发消息队列缓冲**：使用 Redis/Celery 替代同步写入。API 接收数据后立即放入消息队列（`celery` queue），快速返回 `202 Accepted`，实现削峰填谷。
-3. **集群部署与动态扩缩容**：
-   - 使用 Nginx 反向代理负载均衡多个 API 容器。
-   - 提供 `auto_scaler.py` 自动化监控脚本。根据 Redis 消息队列长度，自动动态调整（Scale up / Scale down）Celery Worker 容器实例数量（1~5个）。
-4. **全链路压测与重传**：
-   - 具备完整 UUID 幂等校验，确保数据唯一性和重传安全性。
-   - 提供了 JMeter 压测脚本 (`Moon_Dance_Stress_Test.jmx`)，支持在多台本地设备上发起高并发真实业务流（含 Token 登录 + 数据并发上传）。
+1. **整体架构只看一处**：前端、后端、API、MQ、部署关系统一看 `docs/ARCHITECTURE.md`
+2. **接口定义单独维护**：请求参数、返回结构、错误码只看 `docs/API.md`
+3. **队列细节单独维护**：Celery/Redis 与 Redis Stream 的边界只看 `docs/MQ_ARCHITECTURE.md`
+4. **测试与部署分离**：操作步骤分别在 `docs/MQ_TEST_GUIDE.md` 和 `docs/README_DOCKER.md`
 
 ---
 
@@ -38,12 +32,12 @@ docs/
 | 文档名称 | 用途 | 适用人群 | 核心内容 |
 |---------|------|----------|----------|
 | **README.txt** | 项目快速入门 | 所有用户 | 项目概览、快速启动命令、基本功能介绍 |
-| **ARCHITECTURE.md** | 系统架构设计 | 开发/架构师 | 四层分层架构说明、Mermaid架构图、部署架构、数据流 |
+| **ARCHITECTURE.md** | 系统架构设计 | 开发/架构师 | 项目唯一整体架构说明，梳理前端、后端、API、MQ、部署与文件输出关系 |
 | **API.md** | API接口参考 | 开发/客户端对接人员 | 所有接口的参数说明、请求示例、响应示例、错误码 |
 | **API.html** | 可视化API文档 | 开发/测试 | 美观的HTML格式API文档，可直接在浏览器打开查看 |
 | **API_OPERATION.md** | API运维指南 | 运维/测试 | API测试步骤、日志体系说明、常见问题排查指南 |
-| **MQ_ARCHITECTURE.md** | MQ架构设计 | 开发/架构师 | 消息队列架构规范、消息格式定义、重传机制、模块职责划分 |
-| **MQ_TEST_GUIDE.md** | MQ测试操作指南 | 测试/运维 | MQ服务启动、测试流程、功能验证、重传测试步骤 |
+| **MQ_ARCHITECTURE.md** | MQ架构设计 | 开发/架构师 | 仅说明两套异步链路的边界、消息格式、重传机制和 Worker 分工 |
+| **MQ_TEST_GUIDE.md** | MQ测试操作指南 | 测试/运维 | 区分 Celery 主链路与 Redis Stream 扩展链路的测试步骤 |
 | **README_DOCKER.md** | Docker部署文档 | 运维 | Docker镜像构建、容器部署、集群启动命令 |
 
 ---
@@ -51,18 +45,19 @@ docs/
 ## 文档阅读路径建议
 
 ### 👉 新用户入门
-1. 先看 **README.txt** 了解项目基本功能和快速启动方法
-2. 再看 **ARCHITECTURE.md** 理解整体架构设计
+1. 先看 **README.txt** 了解项目基本功能和启动方式
+2. 再看 **ARCHITECTURE.md** 理解完整系统结构
 
 ### 👉 客户端对接开发
 1. 查阅 **API.md** 或 **API.html** 了解接口规范
 2. 参考 **API_OPERATION.md** 进行接口测试和调试
 
 ### 👉 MQ分布式架构开发/运维
-1. 先看 **MQ_ARCHITECTURE.md** 理解MQ架构设计
-2. 按照 **MQ_TEST_GUIDE.md** 进行部署测试
-3. 结合 **API_OPERATION.md** 进行日常运维
+1. 先看 **ARCHITECTURE.md** 确认当前主链路与扩展链路
+2. 再看 **MQ_ARCHITECTURE.md** 理解队列边界
+3. 按照 **MQ_TEST_GUIDE.md** 进行测试
 
 ### 👉 生产环境部署
-1. 参考 **README_DOCKER.md** 进行容器化部署
-2. 结合 **API_OPERATION.md** 进行生产环境配置
+1. 先看 **ARCHITECTURE.md** 了解部署关系
+2. 再看 **README_DOCKER.md** 进行容器化部署
+3. 结合 **API_OPERATION.md** 做运行排查

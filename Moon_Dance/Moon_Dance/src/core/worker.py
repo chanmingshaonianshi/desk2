@@ -44,9 +44,9 @@ def process_upload_data(self, request_id, device_id, timestamp, sensors, analysi
             "request_id": request_id,
             "device_id": device_id,
             "timestamp": timestamp,
-            "f_left": sensors["left_force_n"],
-            "f_right": sensors["right_force_n"],
-            "ratio": analysis["deviation_ratio"],
+            "f_left": sensors.get("left_force_n", 0),
+            "f_right": sensors.get("right_force_n", 0),
+            "ratio": analysis.get("deviation_ratio", 0) if analysis else 0,
             "process_time": os.times()[4]
         }
         

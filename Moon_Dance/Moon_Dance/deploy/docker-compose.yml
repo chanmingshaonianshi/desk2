@@ -36,9 +36,10 @@ services:
   # 后端API服务（默认3个副本）
   api:
     build:
-      context: ../backend
+      context: ..
       dockerfile: Dockerfile
     restart: always
+    command: python3 -u main_api.py --host 0.0.0.0 --port 8000 --no-ssl
     deploy:
       replicas: 3
       resources:
@@ -67,10 +68,10 @@ services:
   # 异步任务处理Worker
   worker:
     build:
-      context: ../backend
+      context: ..
       dockerfile: Dockerfile
     restart: always
-    command: celery -A src.core.tasks worker --loglevel=info --concurrency=4
+    command: celery -A src.core.worker worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
     volumes:

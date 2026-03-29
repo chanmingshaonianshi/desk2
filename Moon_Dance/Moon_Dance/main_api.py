@@ -1,25 +1,18 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-HTTPS API服务主入口模块
-功能：启动Flask API服务、HTTPS证书管理、路由注册
-作用：对外提供服务接口，支持多设备数据上传、身份鉴权
-使用原因：独立于桌面端的服务入口，支持容器化部署和集群扩展
-"""
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import time
 from typing import Tuple
 
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from flask_cors import CORS
 from OpenSSL import crypto
 
-import json
-import time
 from src.api.auth import auth_bp
 from src.api.routes import api_bp
 from src.config.settings import BASE_PATH, CA_CERT_FILE, CA_KEY_FILE, CERT_DIR, CERT_FILE, KEY_FILE, LOG_DIR
@@ -112,16 +105,15 @@ def _ensure_ca_and_server_cert(cert_dir: str, common_name: str) -> Tuple[str, st
 
 def create_app() -> Flask:
     app = Flask(__name__)
+    app.config["SERVER_NAME"] = None
+    app.url_map.host_matching = False
     CORS(app)
 
-    # 请求日志中间件：每个接口请求数据单独写入文件
     @app.before_request
     def log_request_data():
-        # 跳过静态资源等非API请求
-        if request.path.startswith('/static'):
+        if request.path.startswith("/static"):
             return
-            
-        # 构造日志数据
+
         log_data = {
             "timestamp": int(time.time() * 1000),
             "method": request.method,
@@ -129,16 +121,14 @@ def create_app() -> Flask:
             "remote_addr": request.remote_addr,
             "headers": dict(request.headers),
             "query_params": dict(request.args),
-            "body": request.get_json(silent=True) or request.data.decode('utf-8', errors='ignore')
+            "body": request.get_json(silent=True) or request.data.decode("utf-8", errors="ignore"),
         }
-        
-        # 按接口路径命名文件，每个接口单独一个日志文件
-        log_filename = request.path.replace('/', '_').strip('_') + '.log'
+
+        log_filename = request.path.replace("/", "_").strip("_") + ".log"
         log_file_path = os.path.join(LOG_DIR, log_filename)
-        
-        # 追加写入日志
-        with open(log_file_path, 'a', encoding='utf-8') as f:
-            f.write(json.dumps(log_data, ensure_ascii=False) + '\n')
+
+        with open(log_file_path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(log_data, ensure_ascii=False) + "\n")
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
@@ -156,6 +146,7 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(os.environ.get("API_PORT", "443")))
     parser.add_argument("--cn", default=os.environ.get("API_CERT_CN", "localhost"))
     parser.add_argument("--gen-certs-only", action="store_true")
+    parser.add_argument("--no-ssl", action="store_true", help="Run without SSL (for behind reverse proxy)")
     args = parser.parse_args()
 
     cert_dir = os.path.join(BASE_PATH, CERT_DIR)
@@ -168,7 +159,12 @@ def main() -> None:
         return
 
     app = create_app()
-    app.run(host=args.host, port=args.port, ssl_context=(cert_path, key_path), threaded=True)
+
+    if args.no_ssl:
+        print("Running in HTTP mode (no SSL)")
+        app.run(host=args.host, port=args.port, threaded=True)
+    else:
+        app.run(host=args.host, port=args.port, ssl_context=(cert_path, key_path), threaded=True)
 
 
 if __name__ == "__main__":

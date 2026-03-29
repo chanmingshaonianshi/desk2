@@ -1,28 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-桌面端模拟器主入口模块
-功能：桌面端GUI界面启动、无头模式多设备模拟运行、报表导出
-作用：用户直接使用的主程序入口，支持本地运行和测试
-使用原因：区分桌面端和API服务入口，职责单一，便于不同场景使用
-"""
+
 import argparse
+import queue
 import sys
 import traceback
-import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
 
 def run_no_gui(device_count=10, duration=0):
     import time
     from src.core.device_simulator import DeviceSimulator
-    from src.utils.json_db import append_record, append_realtime_log
     from src.core.report_manager import export_daily_reports_concurrently
+    from src.utils.json_db import append_record, append_realtime_log
 
     msg_queue = queue.Queue()
 
     print(f"--- 启动 {device_count} 路并发模拟 (No-GUI Mode) ---")
-    print(f"--- 数据将保存至 ./data/ 目录 ---")
+    print("--- 数据将保存至 ./data/ 目录 ---")
     if duration > 0:
         print(f"--- 计划运行时间: {duration} 秒 ---")
     print("按 Ctrl+C 停止模拟并生成报表...")
@@ -30,11 +25,8 @@ def run_no_gui(device_count=10, duration=0):
     def _worker(dev_id):
         simulator = DeviceSimulator(dev_id, msg_queue)
         record = simulator.measure()
-        
-        # 实时日志输出 (模拟终端数据跳动)
-        log_msg = f"[{record['time']}] [Dev {dev_id:02d}] L:{record['f_left']:.1f} R:{record['f_right']:.1f} Ratio:{record['ratio']*100:.1f}%"
+        log_msg = f"[{record['time']}] [Dev {dev_id:02d}] L:{record['f_left']:.1f} R:{record['f_right']:.1f} Ratio:{record['ratio'] * 100:.1f}%"
         print(log_msg)
-        
         append_record(dev_id, record)
         append_realtime_log(record)
         return dev_id
@@ -52,10 +44,9 @@ def run_no_gui(device_count=10, duration=0):
                 futures = [executor.submit(_worker, dev_id) for dev_id in range(1, device_count + 1)]
                 for fut in as_completed(futures):
                     fut.result()
-            
-            # 模拟采样间隔
+
             time.sleep(1)
-            
+
     except KeyboardInterrupt:
         print("\n捕获 Ctrl+C，正在停止模拟...")
     except Exception as e:
@@ -72,6 +63,7 @@ def run_no_gui(device_count=10, duration=0):
             output_dir = result.get("output_dir", "")
             print(f"10个设备报表已并行生成完毕，保存路径: {output_dir}")
 
+
 def main():
     try:
         parser = argparse.ArgumentParser()
@@ -80,40 +72,39 @@ def main():
         parser.add_argument("--duration", type=int, default=0, help="Duration in seconds to run (0 for infinite)")
         args, _unknown = parser.parse_known_args()
 
-        # 延迟导入以捕获依赖缺失错误
         if args.no_gui:
             run_no_gui(device_count=args.device_count, duration=args.duration)
             return
 
         from src.ui.main_window import CushionSimulatorApp
-        
+
         app = CushionSimulatorApp()
         app.run()
     except ImportError as e:
         print("启动失败：缺少必要依赖库")
         print(f"错误详情: {e}")
-        
-        # 尝试提取缺失的模块名
+
         missing_module = str(e)
         if "No module named" in missing_module:
             try:
                 missing_module = missing_module.split("'")[1]
             except IndexError:
                 pass
-        
+
         print(f"\n当前环境缺少模块: {missing_module}")
         print("请尝试运行以下命令安装依赖：")
         print(f"pip install {missing_module}")
         print("或者安装所有依赖：")
         print("pip install -r requirements.txt")
-        
-        input("按回车键退出...")
+
         if not any(arg in sys.argv for arg in ["--no-gui"]):
             input("按回车键退出...")
+    except Exception:
         print("程序运行错误：")
         print(traceback.format_exc())
-        input("按回车键退出...")
         if not any(arg in sys.argv for arg in ["--no-gui"]):
             input("按回车键退出...")
+
+
 if __name__ == "__main__":
     main()
