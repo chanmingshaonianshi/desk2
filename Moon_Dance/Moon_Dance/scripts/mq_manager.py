@@ -29,17 +29,17 @@ except Exception:
 # 模块配置
 MODULE_CONFIG = {
     "validator": {
-        "script": "src/mq_workers/validator_worker.py",
+        "module": "src.mq_workers.validator_worker",
         "name_prefix": "validator_worker_",
         "max_replicas": 10
     },
     "writer": {
-        "script": "src/mq_workers/writer_worker.py",
+        "module": "src.mq_workers.writer_worker",
         "name_prefix": "writer_worker_",
         "max_replicas": 10
     },
     "logger": {
-        "script": "src/mq_workers/logger_worker.py",
+        "module": "src.mq_workers.logger_worker",
         "name_prefix": "logger_worker",
         "max_replicas": 1
     }
@@ -119,8 +119,9 @@ def start_module(module_name, replicas=1):
             running_count += 1
         else:
             # 启动新副本
-            script_path = os.path.join(BASE_PATH, config["script"])
-            cmd = [sys.executable, script_path, str(i)]
+            cmd = [sys.executable, "-m", config["module"]]
+            if module_name != "logger":
+                cmd.append(str(i))
             
             # 后台启动
             if sys.platform == "win32":

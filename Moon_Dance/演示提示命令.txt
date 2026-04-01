@@ -10,7 +10,7 @@ Moon_Dance 数据服务系统 - 项目演示命令指南
 -------------------------------------------------------
 本地提交推送：
 git add .
-git commit -m "修复了本地上传数据功能"
+git commit -m "更新了模块化单独启停的脚本同步更新日志"
 git push origin main
 
    服务器一键更新部署：
@@ -161,6 +161,7 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 
 19. 再次查看状态（给老师看模块可分别运行）：
     python3 scripts/mq_manager.py status
+    如果刚才显示“已启动”但这里仍是 0 个副本，说明旧版本 worker 是用脚本方式启动、进程因导入失败秒退；更新最新代码后已改为模块方式启动。
 
 20. 只停止某一个模块（示例：停止 writer）：
     python3 scripts/mq_manager.py stop writer

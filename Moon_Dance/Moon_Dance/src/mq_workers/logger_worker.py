@@ -6,9 +6,11 @@
 作用：系统监控、流量统计、告警通知
 使用原因：独立日志统计模块，不影响业务处理性能，单实例即可满足需求
 """
+import os
 import time
 from collections import defaultdict
 from .base_worker import BaseMQWorker
+from src.config.settings import LOG_DIR
 
 class LoggerWorker(BaseMQWorker):
     def __init__(self):
