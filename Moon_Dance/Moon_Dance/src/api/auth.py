@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, Tuple
 import jwt
 from flask import Blueprint, jsonify, request, g
 
-from src.config.settings import API_APP_ID, API_APP_SECRET, JWT_ALGORITHM, JWT_EXPIRE_SECONDS, JWT_SECRET
+from src.config.settings import API_APP_ID, API_APP_SECRET, API_KEY, JWT_ALGORITHM, JWT_EXPIRE_SECONDS, JWT_SECRET
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -53,6 +53,19 @@ def token_required(fn: Callable[..., Any]) -> Callable[..., Any]:
             return _json_error("Forbidden", 403)
 
         g.jwt_payload = payload
+        return fn(*args, **kwargs)
+
+    return wrapper
+
+
+def api_key_required(fn: Callable[..., Any]) -> Callable[..., Any]:
+    @wraps(fn)
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
+        api_key = request.headers.get("X-API-Key", "").strip()
+        if not api_key:
+            return _json_error("缺少 X-API-Key", 401)
+        if api_key != API_KEY:
+            return _json_error("无效的 API Key", 401)
         return fn(*args, **kwargs)
 
     return wrapper

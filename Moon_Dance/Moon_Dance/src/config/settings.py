@@ -50,6 +50,7 @@ CA_KEY_FILE = "ca.key"
 
 API_APP_ID = os.environ.get("API_APP_ID", "moon_dance_app")
 API_APP_SECRET = os.environ.get("API_APP_SECRET", "moon_dance_secret")
+API_KEY = os.environ.get("API_KEY", "myh")
 JWT_SECRET = os.environ.get("JWT_SECRET", "moon_dance_change_me_please_set_env_32bytes")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_SECONDS = int(os.environ.get("JWT_EXPIRE_SECONDS", "3600"))

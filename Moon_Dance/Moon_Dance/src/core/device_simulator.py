@@ -16,6 +16,7 @@ import os
 import uuid
 import requests
 import json
+from src.config.settings import API_KEY
 from src.core.posture_analyzer import calculate_ratio, get_assessment, generate_force_data
 from src.core.pressure_surface import generate_pressure_surface
 
@@ -30,6 +31,7 @@ class DeviceSimulator:
         self.use_mq = use_mq
         self.api_url = api_url if api_url is not None else os.environ.get("API_SERVER_URL", "http://127.0.0.1:8000/api/upload_data")
         self.api_token = api_token if api_token is not None else os.environ.get("API_BEARER_TOKEN", "").strip()
+        self.api_key = os.environ.get("API_KEY", API_KEY).strip() or API_KEY
         if verify_ssl is None:
             verify_env = os.environ.get("API_VERIFY_SSL", "1").strip().lower()
             self.verify_ssl = verify_env not in {"0", "false", "no", "off"}
@@ -120,7 +122,7 @@ class DeviceSimulator:
             return
         try:
             payload = {k: v for k, v in record.items() if k not in ["time", "ratio", "f_left", "f_right"]}
-            headers = {}
+            headers = {"X-API-Key": self.api_key}
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"
 
@@ -133,8 +135,10 @@ class DeviceSimulator:
             )
             if response.status_code not in (200, 202):
                 print(f"[API Error] Device {self.device_id}: Status {response.status_code}")
+                return
+            print(f"[API OK] Device {self.device_id}: Req {payload['request_id'][:8]} -> {response.status_code}")
         except Exception as e:
-            pass
+            print(f"[API Error] Device {self.device_id}: {e}")
     
     def get_history(self):
         """获取历史测量数据"""

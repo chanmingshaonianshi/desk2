@@ -55,6 +55,7 @@ services:
       - API_PORT=8000
       - API_USE_SSL=0
       - API_CERT_CN=localhost
+      - API_KEY=myh
     volumes:
       - api_data:/app/data
       - ../certs:/app/certs:ro

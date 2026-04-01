@@ -6,7 +6,7 @@
 ## 🚀 当前文档使用原则
 
 1. **整体架构只看一处**：前端、后端、API、MQ、部署关系统一看 `docs/ARCHITECTURE.md`
-2. **接口定义单独维护**：请求参数、返回结构、错误码只看 `docs/API.md`
+2. **接口定义单独维护**：请求参数、返回结构、错误码只看 `docs/API.md`，当前上传链路同时支持 JWT 接口和 API Key 接口
 3. **队列细节单独维护**：Celery/Redis 与 Redis Stream 的边界只看 `docs/MQ_ARCHITECTURE.md`
 4. **测试与部署分离**：操作步骤分别在 `docs/MQ_TEST_GUIDE.md` 和 `docs/README_DOCKER.md`
 
@@ -51,6 +51,7 @@ docs/
 ### 👉 客户端对接开发
 1. 查阅 **API.md** 或 **API.html** 了解接口规范
 2. 参考 **API_OPERATION.md** 进行接口测试和调试
+3. 当前推荐关注两条接入路径：`/api/v1/upload` 使用 Bearer Token，`/api/v2/ingest` 使用 `X-API-Key`
 
 ### 👉 MQ分布式架构开发/运维
 1. 先看 **ARCHITECTURE.md** 确认当前主链路与扩展链路
@@ -61,3 +62,13 @@ docs/
 1. 先看 **ARCHITECTURE.md** 了解部署关系
 2. 再看 **README_DOCKER.md** 进行容器化部署
 3. 结合 **API_OPERATION.md** 做运行排查
+
+---
+
+## 当前框架速记
+
+- **服务端入口**：`Moon_Dance/main_api.py` 负责创建 Flask App、注册蓝图、写入请求日志
+- **鉴权层**：`Moon_Dance/src/api/auth.py` 负责登录签发 JWT，并校验 Bearer Token 与 `X-API-Key`
+- **数据接收层**：`Moon_Dance/src/api/routes.py` 负责 `/api/v1/upload` 与 `/api/v2/ingest` 的入库、幂等和异步投递
+- **客户端入口**：`Moon_Dance/simulator_client.py` 负责启动本地无头模拟，实际上传逻辑在 `Moon_Dance/src/core/device_simulator.py`
+- **部署入口**：`Moon_Dance/deploy/docker-compose.yml` 负责向 `api` 容器注入 `API_KEY`

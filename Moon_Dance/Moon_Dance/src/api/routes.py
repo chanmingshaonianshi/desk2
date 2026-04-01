@@ -18,7 +18,7 @@ from typing import Any, Dict, Set, Tuple
 
 from flask import Blueprint, jsonify, request
 
-from src.api.auth import token_required
+from src.api.auth import api_key_required, token_required
 from src.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR, REDIS_URL
 from src.utils.excel_exporter import export_daily_report
 from src.utils.json_db import append_record, append_realtime_log, mark_request_processed
@@ -127,6 +127,16 @@ def _process_upload(payload: Dict[str, Any]) -> Dict[str, Any]:
 @api_bp.post("/api/v1/upload")
 @token_required
 def upload_v1() -> Tuple[Any, int]:
+    return _handle_upload_request()
+
+
+@api_bp.post("/api/v2/ingest")
+@api_key_required
+def ingest_v2() -> Tuple[Any, int]:
+    return _handle_upload_request()
+
+
+def _handle_upload_request() -> Tuple[Any, int]:
     payload = request.get_json(silent=True) or {}
     request_id = payload.get("request_id")
     if not request_id:
@@ -161,5 +171,5 @@ def upload_v1() -> Tuple[Any, int]:
 @api_bp.post("/api/upload_data")
 @token_required
 def upload_legacy() -> Tuple[Any, int]:
-    return upload_v1()
+    return _handle_upload_request()
 

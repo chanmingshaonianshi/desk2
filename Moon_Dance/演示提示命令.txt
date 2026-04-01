@@ -10,7 +10,7 @@ Moon_Dance 数据服务系统 - 项目演示命令指南
 -------------------------------------------------------
 本地提交推送：
 git add .
-git commit -m "更新了命令 并且将多余终端命令删除了"
+git commit -m "添加了之前被误删的本地发数据文件"
 git push origin main
 
    服务器一键更新部署：
@@ -95,18 +95,16 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 -------------------------------------------------------
 第五步：恢复以前的本地 simulator -> 云端监控 -> 表格输出链路
 -------------------------------------------------------
-讲解词："如果老师想看从我本地电脑直接把模拟数据发到云端，我现在就用恢复好的 simulator_client.py。它会自动带 request_id 和 Bearer Token，把数据发到云端 API。云端这边我再打开表格监控，就能实时看到设备号、左右压力、偏差率和请求编号。"
+讲解词："如果老师想看从我本地电脑直接把模拟数据发到云端，我现在就用恢复好的 simulator_client.py。它会自动带 request_id 和 Bearer Token，把数据发到云端 API。云端这边我再打开表格监控，就能实时看到每次传输的设备号、左右压力、偏差率、请求编号，以及 API 参数名称、类型和传输频率。"
 
-8. 先在云服务器上取一个 Token：
-   TOKEN=$(curl -sk -X POST https://www.myhjmycjh.tech/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c "import sys, json; print(json.load(sys.stdin)['token'])")
-   echo "$TOKEN"
-
-9. 在你自己的本地电脑上启动 simulator_client.py（PowerShell，分三行执行，不要整段一次粘贴）：
+8. 在你自己的本地电脑上启动 simulator_client.py（PowerShell，直接一条命令即可，它会自动去云端换取 Token）：
    cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
-   $env:API_BEARER_TOKEN="把上一步的TOKEN粘贴到这里"
-   python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --no-mq
+   python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --login-url https://www.myhjmycjh.tech/login --no-mq
 
-10. 在云服务器上打开表格模式监控（另开一个终端）：
+9. 云服务器先更新到最新代码并重建容器（必须先做，不然容器里没有新脚本）：
+   cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
+
+10. 在云服务器上打开表格模式监控（另开一个终端，Linux/bash；会同时输出“最近传输记录表”和“API参数表”）：
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
 
 11. 如果要生成/确认表格报表（Excel）：
@@ -174,13 +172,15 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs api
 # 查看 Worker 日志
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs worker
 
+# 云端更新并重建容器
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
+
 # 云端表格监控 upload 日志
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
 
 # 本地 simulator_client 直传云端
 cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
-$env:API_BEARER_TOKEN="YOUR_TOKEN"
-python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --no-mq
+python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --login-url https://www.myhjmycjh.tech/login --no-mq
 
 # 生成 Excel 表格报表
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
