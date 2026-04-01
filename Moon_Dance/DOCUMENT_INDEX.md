@@ -5,9 +5,9 @@
 
 ## 🚀 当前文档使用原则
 
-1. **整体架构只看一处**：前端、后端、API、MQ、部署关系统一看 `docs/ARCHITECTURE.md`
+1. **整体架构只看一处**：前端、后端、API、MQ、部署关系统一看 `docs/ARCHITECTURE.md`，当前是“API 主链路 + Redis Stream 扩展链路”双链路架构
 2. **接口定义单独维护**：请求参数、返回结构、错误码只看 `docs/API.md`，当前上传链路同时支持 JWT 接口和 API Key 接口
-3. **队列细节单独维护**：Celery/Redis 与 Redis Stream 的边界只看 `docs/MQ_ARCHITECTURE.md`
+3. **队列细节单独维护**：Celery/Redis 与 Redis Stream 的边界只看 `docs/MQ_ARCHITECTURE.md`，其中 validator / writer / logger 支持独立启停
 4. **测试与部署分离**：操作步骤分别在 `docs/MQ_TEST_GUIDE.md` 和 `docs/README_DOCKER.md`
 
 ---
@@ -70,5 +70,9 @@ docs/
 - **服务端入口**：`Moon_Dance/main_api.py` 负责创建 Flask App、注册蓝图、写入请求日志
 - **鉴权层**：`Moon_Dance/src/api/auth.py` 负责登录签发 JWT，并校验 Bearer Token 与 `X-API-Key`
 - **数据接收层**：`Moon_Dance/src/api/routes.py` 负责 `/api/v1/upload` 与 `/api/v2/ingest` 的入库、幂等和异步投递
+- **主异步链路**：`Moon_Dance/src/core/worker.py` 通过 Celery + Redis 处理 API 上传后的异步任务
+- **扩展 MQ 链路**：`Moon_Dance/src/core/mq_client.py` 与 `Moon_Dance/src/mq_workers/*` 负责 Redis Stream 消息发送、验证、写入、日志统计
+- **模块管理入口**：`Moon_Dance/scripts/mq_manager.py` 支持 validator / writer / logger 的独立启动、停止、状态查看和多副本运行
+- **扩缩容入口**：`Moon_Dance/scripts/auto_scaler.py` 与 `Moon_Dance/scripts/ops/scaler.py` 负责 Celery worker 的自动扩缩容
 - **客户端入口**：`Moon_Dance/simulator_client.py` 负责启动本地无头模拟，实际上传逻辑在 `Moon_Dance/src/core/device_simulator.py`
 - **部署入口**：`Moon_Dance/deploy/docker-compose.yml` 负责向 `api` 容器注入 `API_KEY`

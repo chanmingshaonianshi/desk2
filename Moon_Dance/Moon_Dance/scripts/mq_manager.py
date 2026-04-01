@@ -12,9 +12,19 @@ MQ服务模块管理脚本
 import os
 import sys
 import time
-import psutil
+import signal
 import subprocess
+
+PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
 from src.config.settings import TEMP_DIR, BASE_PATH
+
+try:
+    import psutil
+except Exception:
+    psutil = None
 
 # 模块配置
 MODULE_CONFIG = {
@@ -64,9 +74,29 @@ def load_pid(module_name, instance_id=1):
 def is_running(pid):
     """检查进程是否运行"""
     try:
-        return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
-    except:
+        if psutil is not None:
+            return psutil.pid_exists(pid) and psutil.Process(pid).is_running()
+        os.kill(pid, 0)
+        return True
+    except Exception:
         return False
+
+
+def terminate_process(pid):
+    """终止进程，优先使用 psutil，缺失时回退到标准库"""
+    if psutil is not None:
+        process = psutil.Process(pid)
+        process.terminate()
+        process.wait(timeout=3)
+        return
+
+    os.kill(pid, signal.SIGTERM)
+    deadline = time.time() + 3
+    while time.time() < deadline:
+        if not is_running(pid):
+            return
+        time.sleep(0.1)
+    raise TimeoutError(f"进程 {pid} 未在规定时间内退出")
 
 def start_module(module_name, replicas=1):
     """启动指定模块的指定副本数"""
@@ -137,9 +167,7 @@ def stop_module(module_name):
         pid = load_pid(module_name, i)
         if pid and is_running(pid):
             try:
-                process = psutil.Process(pid)
-                process.terminate()
-                process.wait(timeout=3)
+                terminate_process(pid)
                 stopped_count += 1
                 print(f"已停止 {module_name} 副本 {i} (PID: {pid})")
             except Exception as e:
