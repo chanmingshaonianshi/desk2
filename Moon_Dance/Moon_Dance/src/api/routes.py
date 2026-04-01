@@ -124,6 +124,37 @@ def _process_upload(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _build_upload_log_record(payload: Dict[str, Any]) -> Dict[str, Any]:
+    sensors = payload.get("sensors") or {}
+    analysis = payload.get("analysis") or {}
+    timestamp_ms = payload.get("timestamp")
+    try:
+        timestamp_ms_int = int(timestamp_ms)
+    except Exception:
+        timestamp_ms_int = int(time.time() * 1000)
+
+    try:
+        ratio = float(analysis.get("deviation_ratio", 0))
+    except Exception:
+        ratio = 0.0
+    try:
+        f_left = float(sensors.get("left_force_n", 0))
+    except Exception:
+        f_left = 0.0
+    try:
+        f_right = float(sensors.get("right_force_n", 0))
+    except Exception:
+        f_right = 0.0
+
+    record: Dict[str, Any] = dict(payload)
+    record["timestamp"] = timestamp_ms_int
+    record["time"] = time.strftime("%H:%M:%S", time.localtime(timestamp_ms_int / 1000))
+    record["ratio"] = ratio
+    record["f_left"] = f_left
+    record["f_right"] = f_right
+    return record
+
+
 @api_bp.post("/api/v1/upload")
 @token_required
 def upload_v1() -> Tuple[Any, int]:
@@ -151,6 +182,8 @@ def _handle_upload_request() -> Tuple[Any, int]:
     processed_ids = _load_processed_ids()
     if request_id_str in processed_ids:
         return jsonify({"ok": True, "message": "数据已处理", "request_id": request_id_str}), 200
+
+    append_realtime_log(_build_upload_log_record(payload), log_file_path=UPLOAD_LOG_FILE)
 
     # 异步发送到Celery队列处理
     process_upload_data.delay(

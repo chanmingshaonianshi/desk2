@@ -9,6 +9,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from urllib.parse import urlsplit, urlunsplit
 
 
+def _needs_login_token(api_url, login_url):
+    if login_url:
+        return True
+    if not api_url:
+        return False
+    path = urlsplit(api_url).path or ""
+    return path in {"/api/v1/upload", "/api/upload_data"}
+
+
 def _derive_login_url(api_url):
     if not api_url:
         return None
@@ -21,6 +30,8 @@ def _derive_login_url(api_url):
 def _resolve_api_token(api_token, api_url, login_url, verify_ssl):
     if api_token:
         return api_token
+    if not _needs_login_token(api_url, login_url):
+        return None
     target_login_url = login_url or _derive_login_url(api_url)
     if not target_login_url:
         return None

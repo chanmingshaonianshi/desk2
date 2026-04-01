@@ -1,0 +1,1 @@
+{"analysis": {"deviation_ratio": 0.1}, "device_id": "device_001", "request_id": "bb336ada-1846-4f13-ba98-0df96955e01e", "sensors": {"left_force_n": 1, "right_force_n": 2}, "timestamp": 1234567890000, "time": "07:31:30", "ratio": 0.1, "f_left": 1.0, "f_right": 2.0, "logged_at": 1775052866529}

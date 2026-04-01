@@ -16,6 +16,7 @@ import os
 import uuid
 import requests
 import json
+import urllib3
 from src.config.settings import API_KEY
 from src.core.posture_analyzer import calculate_ratio, get_assessment, generate_force_data
 from src.core.pressure_surface import generate_pressure_surface
@@ -29,7 +30,7 @@ class DeviceSimulator:
         self.history_data = []
         self.running = True
         self.use_mq = use_mq
-        self.api_url = api_url if api_url is not None else os.environ.get("API_SERVER_URL", "http://127.0.0.1:8000/api/upload_data")
+        self.api_url = api_url if api_url is not None else os.environ.get("API_SERVER_URL", "").strip()
         self.api_token = api_token if api_token is not None else os.environ.get("API_BEARER_TOKEN", "").strip()
         self.api_key = os.environ.get("API_KEY", API_KEY).strip() or API_KEY
         if verify_ssl is None:
@@ -37,12 +38,18 @@ class DeviceSimulator:
             self.verify_ssl = verify_env not in {"0", "false", "no", "off"}
         else:
             self.verify_ssl = bool(verify_ssl)
+        if not self.verify_ssl:
+            urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
         
         self.mq_client = None
         if self.use_mq:
-            from src.core.mq_client import MQClient
-            self.mq_client = MQClient(f"device_{device_id:03d}")
-            self._start_retry_thread()
+            try:
+                from src.core.mq_client import MQClient
+                self.mq_client = MQClient(f"device_{device_id:03d}")
+                self._start_retry_thread()
+            except Exception as exc:
+                self.use_mq = False
+                print(f"[设备{self.device_id:02d}] MQ 已自动关闭: {exc}")
     
     def _start_retry_thread(self):
         """启动后台重传线程，定时重试待发送消息"""

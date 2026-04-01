@@ -8,9 +8,10 @@ Celery异步任务处理模块
 """
 import os
 import json
+import time
 from celery import Celery
 from src.config.settings import REDIS_URL, UPLOAD_LOG_FILE, PROCESSED_IDS_FILE
-from src.utils.json_db import append_realtime_log, mark_request_processed
+from src.utils.json_db import append_record, append_realtime_log, mark_request_processed
 
 # 初始化Celery
 celery = Celery(
@@ -44,14 +45,25 @@ def process_upload_data(self, request_id, device_id, timestamp, sensors, analysi
             "request_id": request_id,
             "device_id": device_id,
             "timestamp": timestamp,
+            "sensors": sensors or {},
+            "analysis": analysis or {},
             "f_left": sensors.get("left_force_n", 0),
             "f_right": sensors.get("right_force_n", 0),
             "ratio": analysis.get("deviation_ratio", 0) if analysis else 0,
+            "time": time.strftime("%H:%M:%S", time.localtime(int(timestamp) / 1000)),
             "process_time": os.times()[4]
         }
         
-        # 写入实时日志
+        # 写入实时日志与上传日志
         append_realtime_log(record)
+        append_realtime_log(record, log_file_path=UPLOAD_LOG_FILE)
+
+        try:
+            device_text = str(device_id)
+            if device_text.startswith("device_") and device_text.split("_", 1)[1].isdigit():
+                append_record(int(device_text.split("_", 1)[1]), record)
+        except Exception:
+            pass
         
         # 标记请求已处理（幂等）
         mark_request_processed(request_id)

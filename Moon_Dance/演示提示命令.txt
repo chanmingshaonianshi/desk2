@@ -10,7 +10,7 @@ Moon_Dance 数据服务系统 - 项目演示命令指南
 -------------------------------------------------------
 本地提交推送：
 git add .
-git commit -m "添加了之前被误删的本地发数据文件"
+git commit -m "添加了加密和鉴权功能 同时在docker中加入了配置"
 git push origin main
 
    服务器一键更新部署：
@@ -103,6 +103,7 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 
 9. 云服务器先更新到最新代码并重建容器（必须先做，不然容器里没有新脚本）：
    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
+   说明：如果云端监控一直显示“等待日志文件出现”，通常就是服务端还没更新到最新代码。
 
 10. 在云服务器上打开表格模式监控（另开一个终端，Linux/bash；会同时输出“最近传输记录表”和“API参数表”）：
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
@@ -111,15 +112,31 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
 
 -------------------------------------------------------
-第六步：手动测试 API 接口 (可选)
+第六步：手动测试 API 接口 / API Key 鉴权 (可选)
 -------------------------------------------------------
-讲解词："我也可以手动测试 API 接口，展示完整的鉴权和数据上传流程。"
+讲解词："我也可以手动测试 API 接口，展示完整的 JWT 鉴权和 API Key 鉴权流程。"
 
 12. 获取 Token：
    curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id": "moon_dance_app", "app_secret": "moon_dance_secret"}'
 
 13. 手动上传数据（替换 YOUR_TOKEN 为上一步获取的 token）：
     curl -sk -X POST https://localhost/api/v1/upload -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_TOKEN' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440000", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
+
+13A. 验证 API Key 缺失时会被拒绝（应返回 401）：
+    curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440001", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
+    说明：返回 {"ok": false, ...} 是“鉴权失败”，这是正确结果。
+
+13B. 验证 API Key 正确时允许写入（应返回 202）：
+    curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -H 'X-API-Key: myh' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440002", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
+    说明：返回 {"ok": true, ...} 是“鉴权通过并已接收”，这也是正确结果。
+
+13C. 本地 simulator_client 直接走 API Key 接口（PowerShell）：
+    cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+    python simulator_client.py
+    python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v2/ingest --no-mq
+    说明：现在直接运行 python simulator_client.py 也会默认走云端 /api/v2/ingest，并自动关闭 MQ 与证书校验
+    如果你手动写命令，建议继续保留 --insecure
+    如果你看到 127.0.0.1:8000/api/upload_data 超时，说明之前没传 api-url，旧默认地址指向本机；现在已修正为默认走云端
 
 -------------------------------------------------------
 第七步：演示结束，优雅地停止所有服务
@@ -181,6 +198,16 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src
 # 本地 simulator_client 直传云端
 cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
 python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --login-url https://www.myhjmycjh.tech/login --no-mq
+
+# 验证 API Key 缺失会被拒绝（401）
+curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -d '{"device_id":"test_device","request_id":"550e8400-e29b-41d4-a716-446655440003","sensors":{"left_force_n":30.5,"right_force_n":40.2},"analysis":{"deviation_ratio":0.15}}'
+
+# 验证 API Key 正确可写入（202）
+curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -H 'X-API-Key: myh' -d '{"device_id":"test_device","request_id":"550e8400-e29b-41d4-a716-446655440004","sensors":{"left_force_n":30.5,"right_force_n":40.2},"analysis":{"deviation_ratio":0.15}}'
+
+# 本地 simulator_client 走 API Key 接口
+cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v2/ingest --no-mq
 
 # 生成 Excel 表格报表
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
