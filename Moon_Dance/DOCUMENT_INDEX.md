@@ -75,6 +75,7 @@ Moon_Dance/
 | `worker.py` | **Celery 异步任务处理器** |
 | `live_monitor.py` | **实时日志监控工具** |
 | `report_manager.py` | **报表批量生成管理器** |
+| `dynamic_scaler.py` | **Docker 动态扩缩容监控模块**（新增，核心扩缩容逻辑） |
 
 ---
 
@@ -124,8 +125,8 @@ Moon_Dance/
 |------|------|
 | `mq_manager.py` | **MQ节点管理脚本（启停/状态）** |
 | `docker_entrypoint.py` | **Docker容器入口脚本** |
-| `auto_scaler.py` | **Celery自动扩缩容入口** |
-| `ops/scaler.py` | **扩缩容核心逻辑** |
+| `auto_scaler.py` | **动态扩缩容启动入口**（委托 `src/core/dynamic_scaler.py` 执行） |
+| `ops/scaler.py` | **旧版扩缩容逻辑**（已保留作历史参考，核心逻辑已迁移至 `src/core/dynamic_scaler.py`） |
 | `api_test.py` | **API 集成测试脚本** |
 | `api_smoke_test.py` | **API 冒烟测试脚本** |
 | `live_monitor.py` | **实时日志监控启动入口** |
@@ -219,6 +220,47 @@ Moon_Dance/
 - `_load_processed_ids()` / `_save_processed_ids()`：线程安全的幂等 ID 文件读写（`RLock` 保护）。
 - `_parse_device_id()`：兼容 `device_001`（字符串格式）和整数格式的设备 ID 解析。
 - `_build_upload_log_record()`：将原始 payload 标准化为含 `time`/`ratio`/`f_left`/`f_right` 字段的日志记录。
+
+---
+
+### `src/core/dynamic_scaler.py` — Docker 动态扩缩容监控模块（新增）
+
+**类型**：独立监控守护进程  
+**职责**：持续采集运行时负载指标，自动调整 Docker Compose 中 Celery Worker 的副本数，实现服务集群的弹性伸缩（既能扩容，也能缩容）。
+
+**双指标扩缩容策略**：
+
+| 指标 | 来源 | 扩容阈值 | 缩容阈值 |
+|------|------|---------|----------|
+| **QPS**（请求速率） | Redis `celery-task-meta-*` 键扫描，统计近20秒完成任务数 | ≥ 5 req/s | < 1 req/s |
+| **Stream 积压量** | Redis `xlen(upstream_data)` | ≥ 100 条 | < 20 条 |
+
+**决策规则**：
+- **扩容**：两个指标任一达到扩容阈值，且当前副本数 < `MAX_WORKERS=5`
+- **缩容**：两个指标同时低于缩容阈值，连续满足 3 轮，且距上次扩缩容超过 30 秒冷却期，且当前副本数 > `MIN_WORKERS=1`
+
+**关键函数**：
+- `get_qps(r)`：扫描 Redis 中 Celery 任务结果键，计算近期 QPS
+- `get_stream_backlog(r)`：通过 `xlen` 读取 Redis Stream 消息积压量
+- `scale_workers(target)`：调用 `docker compose up --scale worker=N` 调整副本数
+- `monitor_and_scale()`：主监控循环，每 `CHECK_INTERVAL=5` 秒采集一次指标并执行决策
+
+**所有阈值均支持环境变量覆盖**：
+```
+MIN_WORKERS, MAX_WORKERS, SCALE_STEP
+QPS_WINDOW_SECONDS, SCALE_UP_QPS_THRESHOLD, SCALE_DOWN_QPS_THRESHOLD
+SCALE_UP_BACKLOG_THRESHOLD, SCALE_DOWN_BACKLOG_THRESHOLD
+SCALE_DOWN_COOLDOWN, CONSECUTIVE_DOWN_COUNT, CHECK_INTERVAL
+```
+
+**运行方式**：
+```bash
+# 作为模块运行（在 Moon_Dance/ 包根目录下执行）
+python -m src.core.dynamic_scaler
+
+# 或通过入口脚本
+python scripts/auto_scaler.py
+```
 
 ---
 
@@ -358,6 +400,7 @@ python -m src.core.live_monitor --source upload --follow
 ### `src/config/settings.py` — 全局配置中心
 
 **类型**：配置模块  
+
 **职责**：集中管理所有配置常量，支持开发/生产环境差异化。
 
 **关键配置项**：
@@ -490,4 +533,5 @@ docs/
 | **设备模拟器** | `src/core/device_simulator.py` | 模拟传感器数据生成，双路上报（API + MQ） |
 | **客户端启动** | `main.py` | GUI 模式或无头模式，10 路并发模拟 |
 | **MQ节点管理** | `scripts/mq_manager.py` | 启停 validator/writer/logger，管理副本数 |
+| **动态扩缩容** | `src/core/dynamic_scaler.py` | 双指标（QPS + Stream积压量）自动扩缩 Docker Worker 副本 |
 | **部署入口** | `deploy/docker-compose.yml` | Docker 编排，注入 `API_KEY` 环境变量 |

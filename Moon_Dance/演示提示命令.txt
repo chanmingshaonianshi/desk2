@@ -22,13 +22,7 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
 
 
 
-
-
-
-
-
-
-
+                                        
 亲爱的同学，请在明天给老师演示时，严格按照以下步骤进行。
 建议每一步操作前，先给老师讲解一下该命令的架构意义（这能大大加分）。
 
@@ -103,9 +97,9 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 
 9. 云服务器先更新到最新代码并重建容器（必须先做，不然容器里没有新脚本）：
    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
-   说明：如果云端监控一直显示“等待日志文件出现”，通常就是服务端还没更新到最新代码。
+   说明：如果云端监控一直显示"等待日志文件出现"，通常就是服务端还没更新到最新代码。
 
-10. 在云服务器上打开表格模式监控（另开一个终端，Linux/bash；会同时输出“最近传输记录表”和“API参数表”）：
+10. 在云服务器上打开表格模式监控（另开一个终端，Linux/bash；会同时输出"最近传输记录表"和"API参数表"）：
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
 
 11. 如果要生成/确认表格报表（Excel）：
@@ -116,27 +110,28 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 -------------------------------------------------------
 讲解词："我也可以手动测试 API 接口，展示完整的 JWT 鉴权和 API Key 鉴权流程。"
 
-12. 获取 Token：
-   curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id": "moon_dance_app", "app_secret": "moon_dance_secret"}'
+说明：以下步骤在服务器 Linux/bash 终端执行。Token 一次获取后保存在 $TOKEN 变量里，
+后续所有命令都直接引用，不需要手动复制粘贴 Token 字符串。
 
-13. 手动上传数据（替换 YOUR_TOKEN 为上一步获取的 token）：
-    curl -sk -X POST https://localhost/api/v1/upload -H 'Content-Type: application/json' -H 'Authorization: Bearer YOUR_TOKEN' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440000", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
+12. 一行命令获取 Token 并自动存入变量（先执行这步，后续步骤都用 $TOKEN，不用手动复制）：
+    TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+    echo "Token 已就绪: $TOKEN"
+
+13. 带 Token 手动上传一条数据（直接引用 $TOKEN 变量，应返回 202）：
+    curl -sk -X POST https://localhost/api/v1/upload -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440000", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
 
 13A. 验证 API Key 缺失时会被拒绝（应返回 401）：
     curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440001", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
-    说明：返回 {"ok": false, ...} 是“鉴权失败”，这是正确结果。
+    说明：返回 {"ok": false, ...} 是"鉴权失败"，这是正确结果。
 
 13B. 验证 API Key 正确时允许写入（应返回 202）：
     curl -sk -X POST https://localhost/api/v2/ingest -H 'Content-Type: application/json' -H 'X-API-Key: myh' -d '{"device_id": "test_device", "request_id": "550e8400-e29b-41d4-a716-446655440002", "sensors": {"left_force_n": 30.5, "right_force_n": 40.2}, "analysis": {"deviation_ratio": 0.15}}'
-    说明：返回 {"ok": true, ...} 是“鉴权通过并已接收”，这也是正确结果。
+    说明：返回 {"ok": true, ...} 是"鉴权通过并已接收"，这也是正确结果。
 
 13C. 本地 simulator_client 直接走 API Key 接口（PowerShell）：
     cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
-    python simulator_client.py
     python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v2/ingest --no-mq
-    说明：现在直接运行 python simulator_client.py 也会默认走云端 /api/v2/ingest，并自动关闭 MQ 与证书校验
-    如果你手动写命令，建议继续保留 --insecure
-    如果你看到 127.0.0.1:8000/api/upload_data 超时，说明之前没传 api-url，旧默认地址指向本机；现在已修正为默认走云端
+    说明：默认走云端 /api/v2/ingest，自动关闭 MQ 与证书校验。
 
 -------------------------------------------------------
 第七步：演示 Redis Stream 模块可独立启停（面向消息队列）
@@ -161,7 +156,7 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
 
 19. 再次查看状态（给老师看模块可分别运行）：
     python3 scripts/mq_manager.py status
-    如果刚才显示“已启动”但这里仍是 0 个副本，说明旧版本 worker 是用脚本方式启动、进程因导入失败秒退；更新最新代码后已改为模块方式启动。
+    如果刚才显示"已启动"但这里仍是 0 个副本，说明旧版本 worker 是用脚本方式启动、进程因导入失败秒退；更新最新代码后已改为模块方式启动。
 
 20. 只停止某一个模块（示例：停止 writer）：
     python3 scripts/mq_manager.py stop writer
@@ -178,20 +173,52 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down
 
 -------------------------------------------------------
-第九步：演示自动扩缩容集群机制（优：验收标准核心）
+第九步：演示 Docker 动态扩缩容（扩容 + 缩容 完整验证流程）
 -------------------------------------------------------
-讲解词："为了达到'优'的验收标准，我们实现了基于消息队列的自动扩缩容架构。现在我启动 auto_scaler 脚本，它会实时监控 Redis 中 celery 队列的积压情况。如果瞬间涌入大量并发请求，队列超过阈值，它会自动通过 Docker 增加 worker 容器的数量；流量下降后，它又会自动缩容，从而实现对服务器资源的最优分配。"
+讲解词："为了达到'优'的验收标准，我们实现了基于 QPS 和消息队列积压量的双指标自动扩缩容架构。
+现在我启动 dynamic_scaler 监控脚本，它同时监控每秒请求量(QPS)和 Redis Stream 积压量。
+瞬间涌入大量并发请求时，会自动通过 Docker 增加 worker 容器数量；
+停止压力后流量回落，又会自动缩容释放资源——做到既能起、又能停。"
 
-23. 运行自动扩缩容监控脚本 (在服务端终端执行)：
+[ 终端A ] 第一步：确认当前 Worker 数量（应为默认 1 个）
+23. 查看 worker 容器数量：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps worker
+    (预期看到 1 个 worker 容器在运行)
+
+[ 终端A ] 第二步：启动双指标监控脚本（保持前台运行，实时观察日志）
+24. 启动 dynamic_scaler 监控：
     cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/auto_scaler.py
+    说明：脚本启动后打印横幅，空闲时每5秒刷新一行状态：
+    [时间]  QPS=0.00  积压=0  待处理=0  Worker=1
 
-24. 在另一个终端启动大量并发客户端制造压力（观察扩容）：
-    LOGIN_RESPONSE=$(curl -k -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}')
-    TOKEN=$(printf '%s' "$LOGIN_RESPONSE" | python3 -c 'import sys, json; raw=sys.stdin.read().strip(); print(json.loads(raw)["token"])')
+[ 终端B ] 第三步：制造高负载，触发自动扩容
+25. 新开一个终端，一键获取 Token 并启动 100 个并发客户端：
+    TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+    echo "Token 就绪，开始压力测试..."
     docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
-    
-    (观察 auto_scaler 终端，当队列积压超过 50 时会自动扩容 worker)
-    (按 Ctrl+C 停止客户端后，观察队列下降并自动缩容)
+
+    >> 观察终端A：当 QPS >= 5 或积压量 >= 100 条，自动打印：
+       [时间]  SCALE UP 1 -> 2  触发: QPS=xx
+       Docker 自动增加 worker 副本数
+
+[ 终端B ] 第四步：停止压力，验证自动缩容
+26. 在终端B按 Ctrl+C 停止客户端，然后等待约 30~60 秒：
+    >> 观察终端A（监控脚本）：
+       QPS 和积压量开始下降
+       出现提示：缩容候选:1/3 -> 2/3 -> 3/3
+       连续3轮低负载 + 30秒冷却后，自动打印：
+       [时间]  SCALE DOWN 2 -> 1
+       Docker 自动减少 worker 副本数，容器被停止
+
+[ 终端C ] 第五步：随时验证当前实际 Worker 数量
+27. 查看实时 worker 副本数（可重复执行，验证数量确实发生了变化）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps worker
+
+28. 查看扩容后 worker 日志（可选，展示多 worker 并行处理）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f worker
+
+29. 演示完毕，停止监控脚本（终端A 按 Ctrl+C）：
+    说明：停止监控脚本不影响运行中的容器，Worker 副本数保持缩容后的值（通常为1）。
 
 -------------------------------------------------------
 第十步：演示多机JMeter压力测试（优：验收标准核心）
@@ -226,7 +253,7 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
 # 云端表格监控 upload 日志
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
 
-# 本地 simulator_client 直传云端
+# 本地 simulator_client 直传云端（自动换取 Token，无需手动操作）
 cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
 python simulator_client.py --device-count 5 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --login-url https://www.myhjmycjh.tech/login --no-mq
 
@@ -253,8 +280,27 @@ python3 scripts/mq_manager.py start logger
 python3 scripts/mq_manager.py stop writer
 python3 scripts/mq_manager.py stop all
 
-# 启动自动扩缩容监控
-python3 scripts/auto_scaler.py
+# ----------------------------------------------------------
+# 动态扩缩容相关命令（验证 Docker 根据访问量自动启停）
+# ----------------------------------------------------------
+
+# 获取 Token 存入变量（后续 $TOKEN 直接引用，无需手动复制粘贴）
+TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
+echo "Token 已就绪: $TOKEN"
+
+# 启动动态扩缩容监控（双指标：QPS >= 5 触发扩容，<1 持续3轮触发缩容；Stream积压量>=100扩容，<20缩容）
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/auto_scaler.py
+
+# 制造负载触发扩容（需先设置好 $TOKEN，见上方命令）
+docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+
+# 验证 Worker 副本数量（扩容后应增加，Ctrl+C 停止压力后 30~60 秒应自动缩回 1）
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps worker
+
+# 每3秒自动刷新 worker 数量（持续观察缩容过程，直到打印 SCALE DOWN 后验证）
+watch -n 3 'docker compose -f ~/desk2/Moon_Dance/Moon_Dance/deploy/docker-compose.yml ps worker'
+
+# ----------------------------------------------------------
 
 # 生成 Excel 表格报表
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
@@ -269,4 +315,5 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose restart
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose build && docker compose up -d
 
 =======================================================
-演示圆满结束，祝你拿到"优"！=======================================================
+演示圆满结束，祝你拿到"优"！
+=======================================================
