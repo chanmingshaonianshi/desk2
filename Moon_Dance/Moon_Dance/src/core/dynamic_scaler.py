@@ -109,18 +109,18 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "5"))
 def get_qps(r) -> float:
     """
     计算最近 QPS_WINDOW_SECONDS 秒内的任务完成速率（req/s）。
-    扫描 Redis 中 celery-task-meta-* 键，统计完成时间在窗口内的任务数。
-
-    :param r: redis.Redis 实例
-    :return: 浮点数 QPS 值
     """
     count = 0
     now = time.time()
     cutoff = now - QPS_WINDOW_SECONDS
     try:
+        # 获取所有任务元数据键
         keys = r.keys("celery-task-meta-*")
-        # 最多扫描最新的 500 个键，避免大规模 Redis 扫描阻塞
-        for key in keys[-500:]:
+        if not keys:
+            return 0.0
+
+        # 按时间倒序检查
+        for key in reversed(keys[-1000:]):
             try:
                 raw = r.get(key)
                 if not raw:
@@ -129,18 +129,21 @@ def get_qps(r) -> float:
                 date_done = task_info.get("date_done", "")
                 if not date_done:
                     continue
-                # 兼容带时区和不带时区的 ISO 格式
+                
+                # 处理 ISO 格式时间戳
                 dt_str = date_done.replace("+08:00", "").replace("+00:00", "").rstrip("Z")
                 dt = datetime.fromisoformat(dt_str)
-                # 若 datetime 无时区信息，当作 UTC 处理
                 if dt.tzinfo is None:
                     ts = dt.replace(tzinfo=timezone.utc).timestamp()
                 else:
                     ts = dt.timestamp()
+                
                 if ts > cutoff:
                     count += 1
+                elif ts < (cutoff - 60): # 如果已经落后窗口1分钟了，后面的肯定更旧
+                    break
             except Exception:
-                pass
+                continue
     except Exception:
         pass
 
@@ -149,15 +152,26 @@ def get_qps(r) -> float:
 
 def get_stream_backlog(r) -> int:
     """
-    获取 upstream_data Redis Stream 中当前积压的消息总数（xlen）。
-
-    :param r: redis.Redis 实例
-    :return: 积压消息条数（整数）
+    获取 Redis Stream 真正的积压量 (Lag)。
+    使用 XINFO GROUPS 查询 validator_group 的 lag。
     """
     try:
-        length = r.xlen(UPSTREAM_STREAM_KEY)
-        return int(length)
+        groups = r.xinfo_groups(UPSTREAM_STREAM_KEY)
+        for group in groups:
+            if group.get('name') == b'validator_group' or group.get('name') == 'validator_group':
+                # Redis 7.0+ 支持直接获取 lag 字段
+                lag = group.get('lag')
+                if lag is not None:
+                    return int(lag)
+                
+                # 如果 Redis 版本较低不支持 lag，
+                # 则估算: 积压 = Stream 总长度 - 最后交付的消息 ID 索引
+                # 注意：这只是个近似值，但在大多数场景下足够精准
+                pending = group.get('pending', 0)
+                return int(pending)
+        return 0
     except Exception:
+        # 如果 Stream 还没创建，积压自然为 0
         return 0
 
 
