@@ -109,39 +109,47 @@ CHECK_INTERVAL = int(os.getenv("CHECK_INTERVAL", "5"))
 def get_qps(r) -> float:
     """
     计算最近 QPS_WINDOW_SECONDS 秒内的任务完成速率（req/s）。
+    使用 Redis Pipeline 批量获取数据，并修正时区判定问题。
     """
     count = 0
-    now = time.time()
-    cutoff = now - QPS_WINDOW_SECONDS
     try:
-        # 获取所有任务元数据键
         keys = r.keys("celery-task-meta-*")
         if not keys:
             return 0.0
 
-        # 按时间倒序检查
-        for key in reversed(keys[-1000:]):
+        # 防止因历史遗留任务过多导致内存爆炸，最多取 5000 个（保底机制）
+        keys = keys[-5000:]
+        
+        # 使用 Pipeline 一次性批量查询，大幅提升性能
+        pipe = r.pipeline()
+        for key in keys:
+            pipe.get(key)
+        results = pipe.execute()
+        
+        now = datetime.now()
+        now_utc = datetime.utcnow()
+        
+        for raw in results:
+            if not raw:
+                continue
             try:
-                raw = r.get(key)
-                if not raw:
-                    continue
                 task_info = json.loads(raw)
-                date_done = task_info.get("date_done", "")
-                if not date_done:
+                date_done_str = task_info.get("date_done", "")
+                if not date_done_str:
                     continue
                 
-                # 处理 ISO 格式时间戳
-                dt_str = date_done.replace("+08:00", "").replace("+00:00", "").rstrip("Z")
-                dt = datetime.fromisoformat(dt_str)
+                dt = datetime.fromisoformat(date_done_str)
+                # 智能推断时间差，规避时区(Local/UTC)解析错误导致的时间进入"未来8小时"
                 if dt.tzinfo is None:
-                    ts = dt.replace(tzinfo=timezone.utc).timestamp()
+                    delta_local = (now - dt).total_seconds()
+                    delta_utc = (now_utc - dt).total_seconds()
+                    seconds_ago = delta_utc if abs(delta_utc) < abs(delta_local) else delta_local
                 else:
-                    ts = dt.timestamp()
+                    seconds_ago = time.time() - dt.timestamp()
                 
-                if ts > cutoff:
+                # 容忍 -5 秒的未来差（防止服务器与容器之间存在微小时间漂移）
+                if -5 <= seconds_ago <= QPS_WINDOW_SECONDS:
                     count += 1
-                elif ts < (cutoff - 60): # 如果已经落后窗口1分钟了，后面的肯定更旧
-                    break
             except Exception:
                 continue
     except Exception:
