@@ -86,13 +86,13 @@ SCALE_STEP  = int(os.getenv("SCALE_STEP", "1"))
 
 # --- 指标 ①：QPS 阈值 ---
 QPS_WINDOW_SECONDS         = int(os.getenv("QPS_WINDOW_SECONDS", "20"))   # 统计窗口（秒）
-SCALE_UP_QPS_THRESHOLD     = float(os.getenv("SCALE_UP_QPS_THRESHOLD", "5.0"))   # QPS ≥ 此值 → 扩容
-SCALE_DOWN_QPS_THRESHOLD   = float(os.getenv("SCALE_DOWN_QPS_THRESHOLD", "1.0")) # QPS < 此值 → 候选缩容
-EMERGENCY_STOP_QPS         = float(os.getenv("EMERGENCY_STOP_QPS", "15.0"))      # 危险上限，直接停机熔断
+SCALE_UP_QPS_THRESHOLD     = float(os.getenv("SCALE_UP_QPS_THRESHOLD", "2.0"))   # QPS ≥ 此值 → 扩容
+SCALE_DOWN_QPS_THRESHOLD   = float(os.getenv("SCALE_DOWN_QPS_THRESHOLD", "0.5")) # QPS < 此值 → 候选缩容
+EMERGENCY_STOP_QPS         = float(os.getenv("EMERGENCY_STOP_QPS", "8.0"))      # 危险上限，直接停机熔断
 
 # --- 指标 ②：Celery任务积压量阈值 ---
-SCALE_UP_PENDING_THRESHOLD        = int(os.getenv("SCALE_UP_PENDING_THRESHOLD", "50"))  # 待处理 ≥ 此值 → 扩容
-SCALE_DOWN_PENDING_THRESHOLD      = int(os.getenv("SCALE_DOWN_PENDING_THRESHOLD", "5")) # 待处理 < 此值 → 候选缩容
+SCALE_UP_PENDING_THRESHOLD        = int(os.getenv("SCALE_UP_PENDING_THRESHOLD", "10"))  # 待处理 ≥ 此值 → 扩容
+SCALE_DOWN_PENDING_THRESHOLD      = int(os.getenv("SCALE_DOWN_PENDING_THRESHOLD", "2")) # 待处理 < 此值 → 候选缩容
 
 # --- 缩容稳定性控制 ---
 SCALE_DOWN_COOLDOWN        = int(os.getenv("SCALE_DOWN_COOLDOWN", "30"))    # 缩容冷却秒数

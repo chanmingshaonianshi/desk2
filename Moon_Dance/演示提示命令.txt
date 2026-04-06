@@ -223,8 +223,8 @@ sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/realtime_log
 -------------------------------------------------------
 第十步：演示 Docker 动态扩缩容与高并发“熔断停机”（扩缩容+停机 完整验证流程）
 -------------------------------------------------------
-讲解词："为了达到'优'的验收标准，我们不仅实现了基于 QPS 和消息积压量的双指标动态扩缩容架构，更符合了最高要求的——**极端访问量下自动停止服务器**。
-现在我启动监控脚本，瞬间涌入大量并发请求时，会自动扩充 Worker；但如果要扩容达到 5 台满载并且 QPS 依然居高不下（超过20），系统就会启动「过载保护熔断机制」，强行停止所有运算服务器，防止底层数据库被彻底击穿。"
+讲解词："为了达到'优'的验收标准，我们不仅实现了基于 QPS 和待处理任务数的双指标动态扩缩容架构，更符合了最高要求的——**极端访问量下自动停止服务器**。
+现在我启动监控脚本，瞬间涌入大量并发请求时，会自动扩充 Worker；但如果要扩容达到 5 台满载并且 QPS 依然居高不下（超过8），系统就会启动「过载保护熔断机制」，强行停止所有运算服务器，防止底层数据库被彻底击穿。"
 
 [ 终端A ] 第一步：启动监控脚本（保持前台运行）
 23. 启动 dynamic_scaler 监控：
@@ -235,17 +235,17 @@ sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/realtime_log
 24. 获取 Token 并启动 10 个并发模拟器，观察自动增加：
     TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
     
-    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 150 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
-    >> 观察终端A：当 QPS >= 5，会打印 SCALE UP 1 -> 2 -> 3...，动态增添服务器。
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 10 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    >> 观察终端A：当 QPS >= 2，会打印 SCALE UP 1 -> 2 -> 3...，动态增添服务器。
 
 [ 终端C 可选 ] 第三步：验证正常缩容
 25. 在终端B按 Ctrl+C，稍歇 30 秒，终端 A 将打印 SCALE DOWN 缩减服务器。
 
 [ 终端B ] 第四步：演示终极要求——根据访问量直接停发服务器
-26. 我们直接把并发数拉满到 100，疯狂发包，瞬间触发熔断停机：
-    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 0 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+26. 我们把并发数拉满到 150，疯狂砸包，瞬间触发熔断停机（这里间隔用安全的整数 1，避免发信端被堵死）：
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 150 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
 
-    >> 观察终端A：由于并发太大多台扩容也吃不消，当扩充达到 MAX=5 台且 QPS ≧ 15 时，会突然打印红色警报：
+    >> 观察终端A：由于并发太大多台扩容也吃不消，当扩充达到 MAX=5 台且 QPS ≧ 8.0 时，会突然打印红色警报：
        🚨 `触发服务熔断机制，根据极其异常的访问量强行停止底层运算服务器...`
        ✅ `服务器集群 (API与Worker) 已全部紧急切断！成功避免被雪崩击穿。`
     然后监控脚本光荣下线。
