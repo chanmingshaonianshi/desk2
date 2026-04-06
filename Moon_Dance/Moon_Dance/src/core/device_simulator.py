@@ -137,7 +137,7 @@ class DeviceSimulator:
                 self.api_url,
                 json=payload,
                 headers=headers,
-                timeout=2,
+                timeout=5,
                 verify=self.verify_ssl,
             )
             if response.status_code not in (200, 202):

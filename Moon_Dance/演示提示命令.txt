@@ -10,13 +10,24 @@ Moon_Dance 数据服务系统 - 项目演示命令指南
 -------------------------------------------------------
 本地提交推送：
 git add .
-git commit -m "模块化脚本重写 之前遇到了进程秒退的错误"
+git commit -m "修改了缩容问题"
 git push origin main
 
    服务器一键更新部署：
 ssh ubuntu@124.220.79.133 'cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh'
 
-如果已经登录进服务器，也可以直接执行：
+
+# 1. 强制放弃当前卡住的拉取/合并状态
+cd ~/desk2/Moon_Dance/Moon_Dance
+git merge --abort 2>/dev/null || true
+
+# 2. 从 Github 获取最新状态
+git fetch origin main
+
+# 3. 强制让本地代码完全覆盖为 Github 的最新版本（本地冲突会被强行抹平）
+git reset --hard origin/main
+
+# 4. 现在再重新执行你的一键更新部署，绝对可以成功了
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && bash deploy.sh
 
 
@@ -100,15 +111,31 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
    说明：如果云端监控一直显示"等待日志文件出现"，通常就是服务端还没更新到最新代码。
 
 10. 在云服务器上打开表格模式监控（另开一个终端，Linux/bash；会同时输出"最近传输记录表"和"API参数表"）：
+
+# 清空压测留下的历史日志（让监控界面变干净）
+sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/upload_log.jsonl
+sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/realtime_log.jsonl
+
+
+
+
+
+
+
+
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.live_monitor --source upload --limit 10 --follow
 
 11. 如果要生成/确认表格报表（Excel）：
+
+
+
+
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python -m src.core.report_manager --device-count 10
 
 -------------------------------------------------------
-第六步：手动测试 API 接口 / API Key 鉴权 (可选)
+第六步：演示数据安全机制（HTTPS加密、身份鉴权与非法拒接）
 -------------------------------------------------------
-讲解词："我也可以手动测试 API 接口，展示完整的 JWT 鉴权和 API Key 鉴权流程。"
+讲解词："为保证数据安全，系统强制采用 HTTPS 加密传输。同时配备双重身份验证机制，未提供合法 Token 或 API Key 的端点将被服务器直接拒绝（强制返回 401/403）。下面我演示服务器拦截非法请求并放行合法请求的过程。"
 
 说明：以下步骤在服务器 Linux/bash 终端执行。Token 一次获取后保存在 $TOKEN 变量里，
 后续所有命令都直接引用，不需要手动复制粘贴 Token 字符串。
@@ -134,7 +161,28 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
     说明：默认走云端 /api/v2/ingest，自动关闭 MQ 与证书校验。
 
 -------------------------------------------------------
-第七步：演示 Redis Stream 模块可独立启停（面向消息队列）
+第七步：演示客户端断网重传机制（高可用保证）
+-------------------------------------------------------
+讲解词："为了解决网络不稳定导致的数据丢失问题，数据发送端（MQ 客户端）内置了支持「指数退避算法」的断线重传机制。我将通过强制停机制造故障，给老师演示数据转入本地缓存及网络恢复后的自动重传补发。"
+
+准备工作：需要开启两个终端窗口配合（必须先运行发信脚本，再切断网络才能看到效果）。
+
+【终端A】运行带日志重传的测试发信客户端：
+    cd ~/desk2/Moon_Dance/Moon_Dance 
+    python3 main.py --no-gui --duration 300 --device-count 1
+    (此时屏幕会每隔一秒打印成功发送记录)
+
+【终端B】制造断网故障（停止Redis）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy
+    docker stop deploy-redis-1
+    >> 讲解词：观察终端A，控制台会立刻打印 `[MQ] 消息发送失败`，数据自动移入 pending 待重传缓存区。
+
+【终端B】模拟网络恢复（启动Redis）：
+    docker start deploy-redis-1
+    >> 讲解词：回到终端A观察，不到10秒钟控制台自动打印：`[MQ] 重试发送消息` 和 `重传结果：成功X条`，因为断网积压的数据全数无损补发回服务器！测试结束后在终端A按下 Ctrl+C 停止测试。
+
+-------------------------------------------------------
+第八步：演示 Redis Stream 模块可独立启停（面向消息队列）
 -------------------------------------------------------
 讲解词："除了默认的 Flask + Celery + Redis 主链路，我们还保留了 Redis Stream 扩展链路。它把验证、写入、日志统计拆成独立模块，可以分别启动、停止和查看状态。"
 
@@ -165,7 +213,7 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
     python3 scripts/mq_manager.py stop all
 
 -------------------------------------------------------
-第八步：演示结束，优雅地停止所有服务
+第九步：演示结束，优雅地停止所有服务
 -------------------------------------------------------
 讲解词："演示完毕，为了节省服务器资源，我现在一键安全地停止并清理所有的容器。"
 
@@ -173,55 +221,44 @@ docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.1
     cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down
 
 -------------------------------------------------------
-第九步：演示 Docker 动态扩缩容（扩容 + 缩容 完整验证流程）
+第十步：演示 Docker 动态扩缩容与高并发“熔断停机”（扩缩容+停机 完整验证流程）
 -------------------------------------------------------
-讲解词："为了达到'优'的验收标准，我们实现了基于 QPS 和消息队列积压量的双指标自动扩缩容架构。
-现在我启动 dynamic_scaler 监控脚本，它同时监控每秒请求量(QPS)和 Redis Stream 积压量。
-瞬间涌入大量并发请求时，会自动通过 Docker 增加 worker 容器数量；
-停止压力后流量回落，又会自动缩容释放资源——做到既能起、又能停。"
+讲解词："为了达到'优'的验收标准，我们不仅实现了基于 QPS 和消息积压量的双指标动态扩缩容架构，更符合了最高要求的——**极端访问量下自动停止服务器**。
+现在我启动监控脚本，瞬间涌入大量并发请求时，会自动扩充 Worker；但如果要扩容达到 5 台满载并且 QPS 依然居高不下（超过20），系统就会启动「过载保护熔断机制」，强行停止所有运算服务器，防止底层数据库被彻底击穿。"
 
-[ 终端A ] 第一步：确认当前 Worker 数量（应为默认 1 个）
-23. 查看 worker 容器数量：
-    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps worker
-    (预期看到 1 个 worker 容器在运行)
-
-[ 终端A ] 第二步：启动双指标监控脚本（保持前台运行，实时观察日志）
-24. 启动 dynamic_scaler 监控：
+[ 终端A ] 第一步：启动监控脚本（保持前台运行）
+23. 启动 dynamic_scaler 监控：
     cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/auto_scaler.py
-    说明：脚本启动后打印横幅，空闲时每5秒刷新一行状态：
-    [时间]  QPS=0.00  积压=0  待处理=0  Worker=1
+    (注意：脚本打印了最新的熔断条件。)
 
-[ 终端B ] 第三步：制造高负载，触发自动扩容
-25. 新开一个终端，一键获取 Token 并启动 100 个并发客户端：
+[ 终端B ] 第二步：制造常规高负载，触发自动扩容
+24. 获取 Token 并启动 10 个并发模拟器，观察自动增加：
     TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
-    echo "Token 就绪，开始压力测试..."
-    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 10 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    >> 观察终端A：当 QPS >= 5，会打印 SCALE UP 1 -> 2 -> 3...，动态增添服务器。
 
-    >> 观察终端A：当 QPS >= 5 或积压量 >= 100 条，自动打印：
-       [时间]  SCALE UP 1 -> 2  触发: QPS=xx
-       Docker 自动增加 worker 副本数
+[ 终端C 可选 ] 第三步：验证正常缩容
+25. 在终端B按 Ctrl+C，稍歇 30 秒，终端 A 将打印 SCALE DOWN 缩减服务器。
 
-[ 终端B ] 第四步：停止压力，验证自动缩容
-26. 在终端B按 Ctrl+C 停止客户端，然后等待约 30~60 秒：
-    >> 观察终端A（监控脚本）：
-       QPS 和积压量开始下降
-       出现提示：缩容候选:1/3 -> 2/3 -> 3/3
-       连续3轮低负载 + 30秒冷却后，自动打印：
-       [时间]  SCALE DOWN 2 -> 1
-       Docker 自动减少 worker 副本数，容器被停止
+[ 终端B ] 第四步：演示终极要求——根据访问量直接停发服务器
+26. 我们直接把并发数拉满到 100，疯狂发包，瞬间触发熔断停机：
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 0.5 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
 
-[ 终端C ] 第五步：随时验证当前实际 Worker 数量
-27. 查看实时 worker 副本数（可重复执行，验证数量确实发生了变化）：
-    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps worker
+    >> 观察终端A：由于并发太大多台扩容也吃不消，当扩充达到 MAX=5 台且 QPS ≧ 20 时，会突然打印红色警报：
+       🚨 `触发服务熔断机制，根据极其异常的访问量强行停止底层运算服务器...`
+       ✅ `服务器集群 (API与Worker) 已全部紧急切断！成功避免被雪崩击穿。`
+    然后监控脚本光荣下线。
 
-28. 查看扩容后 worker 日志（可选，展示多 worker 并行处理）：
-    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose logs -f worker
+[ 终端C ] 第五步：验证服务器是否真的停止了
+27. 查看存活的容器，此时 api 和 worker 的状态应该是 exited（已退出/停止）：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose ps
 
-29. 演示完毕，停止监控脚本（终端A 按 Ctrl+C）：
-    说明：停止监控脚本不影响运行中的容器，Worker 副本数保持缩容后的值（通常为1）。
+28. 演示完毕后，手动把服务器重新拉起：
+    cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose start API worker
 
 -------------------------------------------------------
-第十步：演示多机JMeter压力测试（优：验收标准核心）
+第十一步：演示多机JMeter压力测试（优：验收标准核心）
 -------------------------------------------------------
 讲解词："我们还在至少3台本地电脑上，使用 JMeter 对数据服务器进行了压力测试。我已经编写好了包含 Token 鉴权和并发数据上传的 JMX 压测脚本，现在我来展示如何在本地执行压测，并导出报告测算每秒处理的最大请求数和业务数。"
 

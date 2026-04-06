@@ -88,6 +88,7 @@ SCALE_STEP  = int(os.getenv("SCALE_STEP", "1"))
 QPS_WINDOW_SECONDS         = int(os.getenv("QPS_WINDOW_SECONDS", "20"))   # 统计窗口（秒）
 SCALE_UP_QPS_THRESHOLD     = float(os.getenv("SCALE_UP_QPS_THRESHOLD", "5.0"))   # QPS ≥ 此值 → 扩容
 SCALE_DOWN_QPS_THRESHOLD   = float(os.getenv("SCALE_DOWN_QPS_THRESHOLD", "1.0")) # QPS < 此值 → 候选缩容
+EMERGENCY_STOP_QPS         = float(os.getenv("EMERGENCY_STOP_QPS", "20.0"))      # 危险上限，直接停机熔断
 
 # --- 指标 ②：Redis Stream 积压量阈值 ---
 UPSTREAM_STREAM_KEY               = os.getenv("UPSTREAM_STREAM_KEY", "upstream_data")
@@ -279,6 +280,9 @@ def _print_banner():
     print(f"     QPS     ≥ {SCALE_UP_QPS_THRESHOLD} req/s")
     print(f"     积压量  ≥ {SCALE_UP_BACKLOG_THRESHOLD} 条")
     print()
+    print("  ── 熔断停机条件（最高负载强行保护）──────────────────")
+    print(f"     满载({MAX_WORKERS}台) 且 QPS ≥ {EMERGENCY_STOP_QPS}")
+    print()
     print("  ── 缩容触发条件（同时满足 + 稳定N轮 + 冷却）─────────")
     print(f"     QPS     < {SCALE_DOWN_QPS_THRESHOLD} req/s")
     print(f"     积压量  < {SCALE_DOWN_BACKLOG_THRESHOLD} 条")
@@ -341,7 +345,24 @@ def monitor_and_scale():
             )
 
             # ---- 执行扩缩容 -----------------------------------------------
-            if should_scale_up and current_workers < MAX_WORKERS:
+            # 熔断停机检查
+            if current_workers >= MAX_WORKERS and qps >= EMERGENCY_STOP_QPS:
+                print(f"\n[{ts}] 🚨 危险：集群已达满载极限({MAX_WORKERS}台)！QPS={qps} 超过安全阈值 {EMERGENCY_STOP_QPS}！")
+                print(f"[{ts}] 🛑 触发服务熔断机制，根据极其异常的访问量强行停止底层运算服务器...")
+                try:
+                    subprocess.run(
+                        ["docker", "compose", "stop", "api", "worker"],
+                        cwd=DEPLOY_DIR,
+                        check=True,
+                    )
+                    print(f"[{ts}] ✅ 服务器集群 (API与Worker) 已全部紧急切断！成功避免被雪崩击穿。")
+                except Exception as e:
+                    print(f"[{ts}] ❌ 停机指令异常: {e}")
+                
+                print("[INFO] 监控脚本将自动退出，演示结束。如需恢复请执行：docker compose up -d")
+                break
+
+            elif should_scale_up and current_workers < MAX_WORKERS:
                 new_workers = min(current_workers + SCALE_STEP, MAX_WORKERS)
                 reason = []
                 if qps >= SCALE_UP_QPS_THRESHOLD:
