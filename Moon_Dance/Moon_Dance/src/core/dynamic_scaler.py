@@ -88,12 +88,11 @@ SCALE_STEP  = int(os.getenv("SCALE_STEP", "1"))
 QPS_WINDOW_SECONDS         = int(os.getenv("QPS_WINDOW_SECONDS", "20"))   # 统计窗口（秒）
 SCALE_UP_QPS_THRESHOLD     = float(os.getenv("SCALE_UP_QPS_THRESHOLD", "5.0"))   # QPS ≥ 此值 → 扩容
 SCALE_DOWN_QPS_THRESHOLD   = float(os.getenv("SCALE_DOWN_QPS_THRESHOLD", "1.0")) # QPS < 此值 → 候选缩容
-EMERGENCY_STOP_QPS         = float(os.getenv("EMERGENCY_STOP_QPS", "20.0"))      # 危险上限，直接停机熔断
+EMERGENCY_STOP_QPS         = float(os.getenv("EMERGENCY_STOP_QPS", "15.0"))      # 危险上限，直接停机熔断
 
-# --- 指标 ②：Redis Stream 积压量阈值 ---
-UPSTREAM_STREAM_KEY               = os.getenv("UPSTREAM_STREAM_KEY", "upstream_data")
-SCALE_UP_BACKLOG_THRESHOLD        = int(os.getenv("SCALE_UP_BACKLOG_THRESHOLD", "100"))  # 积压 ≥ 此值 → 扩容
-SCALE_DOWN_BACKLOG_THRESHOLD      = int(os.getenv("SCALE_DOWN_BACKLOG_THRESHOLD", "20")) # 积压 < 此值 → 候选缩容
+# --- 指标 ②：Celery任务积压量阈值 ---
+SCALE_UP_PENDING_THRESHOLD        = int(os.getenv("SCALE_UP_PENDING_THRESHOLD", "50"))  # 待处理 ≥ 此值 → 扩容
+SCALE_DOWN_PENDING_THRESHOLD      = int(os.getenv("SCALE_DOWN_PENDING_THRESHOLD", "5")) # 待处理 < 此值 → 候选缩容
 
 # --- 缩容稳定性控制 ---
 SCALE_DOWN_COOLDOWN        = int(os.getenv("SCALE_DOWN_COOLDOWN", "30"))    # 缩容冷却秒数
@@ -278,14 +277,14 @@ def _print_banner():
     print()
     print("  ── 扩容触发条件（任一满足）──────────────────────────")
     print(f"     QPS     ≥ {SCALE_UP_QPS_THRESHOLD} req/s")
-    print(f"     积压量  ≥ {SCALE_UP_BACKLOG_THRESHOLD} 条")
+    print(f"     待处理  ≥ {SCALE_UP_PENDING_THRESHOLD} 条")
     print()
     print("  ── 熔断停机条件（最高负载强行保护）──────────────────")
     print(f"     满载({MAX_WORKERS}台) 且 QPS ≥ {EMERGENCY_STOP_QPS}")
     print()
     print("  ── 缩容触发条件（同时满足 + 稳定N轮 + 冷却）─────────")
     print(f"     QPS     < {SCALE_DOWN_QPS_THRESHOLD} req/s")
-    print(f"     积压量  < {SCALE_DOWN_BACKLOG_THRESHOLD} 条")
+    print(f"     待处理  < {SCALE_DOWN_PENDING_THRESHOLD} 条")
     print(f"     连续    {CONSECUTIVE_DOWN_COUNT_REQ} 轮低负载")
     print(f"     冷却    {SCALE_DOWN_COOLDOWN} 秒")
     print("=" * 62)
@@ -326,9 +325,9 @@ def monitor_and_scale():
 
             # ---- 决策逻辑 ------------------------------------------------
             should_scale_up   = (qps >= SCALE_UP_QPS_THRESHOLD) or \
-                                 (backlog >= SCALE_UP_BACKLOG_THRESHOLD)
+                                 (pending >= SCALE_UP_PENDING_THRESHOLD)
             candidate_down    = (qps <  SCALE_DOWN_QPS_THRESHOLD) and \
-                                 (backlog < SCALE_DOWN_BACKLOG_THRESHOLD)
+                                 (pending < SCALE_DOWN_PENDING_THRESHOLD)
 
             # 更新缩容连续计数
             if candidate_down:
@@ -367,12 +366,12 @@ def monitor_and_scale():
                 reason = []
                 if qps >= SCALE_UP_QPS_THRESHOLD:
                     reason.append(f"QPS={qps}")
-                if backlog >= SCALE_UP_BACKLOG_THRESHOLD:
-                    reason.append(f"积压={backlog}")
+                if pending >= SCALE_UP_PENDING_THRESHOLD:
+                    reason.append(f"待处理={pending}")
                 print(
                     f"\n[{ts}] ⬆️  SCALE UP  {current_workers} → {new_workers}"
                     f"  触发: {', '.join(reason)}"
-                    f"  (待处理={pending})"
+                    f"  (积压={backlog})"
                 )
                 if scale_workers(new_workers):
                     current_workers = new_workers
@@ -383,7 +382,7 @@ def monitor_and_scale():
                 new_workers = max(current_workers - SCALE_STEP, MIN_WORKERS)
                 print(
                     f"\n[{ts}] ⬇️  SCALE DOWN  {current_workers} → {new_workers}"
-                    f"  (QPS={qps}, 积压={backlog}, 连续{consecutive_down}轮低负载)"
+                    f"  (QPS={qps}, 待处理={pending}, 连续{consecutive_down}轮低负载)"
                 )
                 if scale_workers(new_workers):
                     current_workers = new_workers

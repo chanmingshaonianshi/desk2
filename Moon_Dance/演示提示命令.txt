@@ -10,7 +10,7 @@ Moon_Dance 数据服务系统 - 项目演示命令指南
 -------------------------------------------------------
 本地提交推送：
 git add .
-git commit -m "修改了缩容问题"
+git commit -m "更新了服务器自动停止功能（qps过大且worker已满）"
 git push origin main
 
    服务器一键更新部署：
@@ -235,7 +235,7 @@ sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/realtime_log
 24. 获取 Token 并启动 10 个并发模拟器，观察自动增加：
     TOKEN=$(curl -sk -X POST https://localhost/login -H 'Content-Type: application/json' -d '{"app_id":"moon_dance_app","app_secret":"moon_dance_secret"}' | python3 -c 'import sys,json; print(json.load(sys.stdin)["token"])')
     
-    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 10 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 150 --interval 1 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
     >> 观察终端A：当 QPS >= 5，会打印 SCALE UP 1 -> 2 -> 3...，动态增添服务器。
 
 [ 终端C 可选 ] 第三步：验证正常缩容
@@ -243,9 +243,9 @@ sudo truncate -s 0 ~/desk2/Moon_Dance/Moon_Dance/data/realtime_logs/realtime_log
 
 [ 终端B ] 第四步：演示终极要求——根据访问量直接停发服务器
 26. 我们直接把并发数拉满到 100，疯狂发包，瞬间触发熔断停机：
-    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 0.5 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
+    docker run --rm -e PYTHONUNBUFFERED=1 --add-host www.myhjmycjh.tech:124.220.79.133 --entrypoint python moondance-client -u simulate_clients.py -n 100 --interval 0 --api-url https://www.myhjmycjh.tech/api/v1/upload --token "$TOKEN"
 
-    >> 观察终端A：由于并发太大多台扩容也吃不消，当扩充达到 MAX=5 台且 QPS ≧ 20 时，会突然打印红色警报：
+    >> 观察终端A：由于并发太大多台扩容也吃不消，当扩充达到 MAX=5 台且 QPS ≧ 15 时，会突然打印红色警报：
        🚨 `触发服务熔断机制，根据极其异常的访问量强行停止底层运算服务器...`
        ✅ `服务器集群 (API与Worker) 已全部紧急切断！成功避免被雪崩击穿。`
     然后监控脚本光荣下线。
