@@ -118,8 +118,11 @@ def get_qps(r) -> float:
             return 0.0
 
         # 防止因历史遗留任务过多导致内存爆炸，最多取 5000 个（保底机制）
-        keys = keys[-5000:]
-        
+        if len(keys) > 5000:
+            # 随机删除最早的一部分防止撑爆内存
+            # 但既然我们在启动时做过全量清理，正常不会达到此数值
+            keys = keys[-5000:]
+            
         # 使用 Pipeline 一次性批量查询，大幅提升性能
         pipe = r.pipeline()
         for key in keys:
@@ -310,6 +313,26 @@ def monitor_and_scale():
 
     current_workers = get_current_workers()
     print(f"[INFO] 当前 Worker 副本数: {current_workers}")
+
+    # ================= 核心 BUG 修复 =================
+    # 清理 Redis 中旧的 celery-task-meta-* 键！
+    # 因为随着不断测试，Redis 中积累了十万级的老旧 Meta，导致 keys() 分步查询出来的结果全是被截断的老数据，
+    # 导致脚本误判近期任务数为0，QPS永远上不去！开启这一步可以“强行疏通下水道”。
+    try:
+        print("[INFO] 正在扫描并清理遗留堆积的历史任务...")
+        old_keys = r.keys("celery-task-meta-*")
+        if old_keys:
+            pipe = r.pipeline()
+            for k in old_keys:
+                pipe.delete(k)
+            pipe.execute()
+            print(f"[OK] 成功清理 {len(old_keys)} 个过时任务，QPS 计算已恢复精准！")
+        else:
+            print("[OK] 无过时任务，数据通道畅通。")
+    except Exception as e:
+        print(f"[WARN] 清理数据失败: {e}")
+    # ===============================================
+
     print("=" * 62)
     print()
 
