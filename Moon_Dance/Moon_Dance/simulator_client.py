@@ -16,4 +16,6 @@ if __name__ == "__main__":
         sys.argv.append("--no-mq")
     if "--insecure" not in sys.argv:
         sys.argv.append("--insecure")
+    if "--encrypt" not in sys.argv:
+        sys.argv.append("--encrypt")
     app_main()
