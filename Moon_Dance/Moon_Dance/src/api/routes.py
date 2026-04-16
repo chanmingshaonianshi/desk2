@@ -169,6 +169,15 @@ def ingest_v2() -> Tuple[Any, int]:
 
 def _handle_upload_request() -> Tuple[Any, int]:
     payload = request.get_json(silent=True) or {}
+    
+    # 鉴别并解密加密过的数据字典 (数据加密传输验收环节)
+    if "encrypted_payload" in payload:
+        try:
+            from src.utils.crypto import decrypt_payload
+            payload = decrypt_payload(payload["encrypted_payload"])
+        except Exception as e:
+            return _json_error(f"数据解密失败: {str(e)}", 400)
+
     request_id = payload.get("request_id")
     if not request_id:
         return _json_error("缺少 request_id", 400)

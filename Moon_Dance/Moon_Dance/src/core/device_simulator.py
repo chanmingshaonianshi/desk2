@@ -24,7 +24,7 @@ from src.core.pressure_surface import generate_pressure_surface
 
 class DeviceSimulator:
     """设备模拟器类"""
-    def __init__(self, device_id, msg_queue, use_mq=True, api_url=None, api_token=None, verify_ssl=None):
+    def __init__(self, device_id, msg_queue, use_mq=True, api_url=None, api_token=None, verify_ssl=None, encrypt=False):
         self.device_id = device_id
         self.msg_queue = msg_queue
         self.history_data = []
@@ -40,6 +40,8 @@ class DeviceSimulator:
             self.verify_ssl = bool(verify_ssl)
         if not self.verify_ssl:
             urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+        
+        self.encrypt = encrypt
         
         self.mq_client = None
         if self.use_mq:
@@ -129,6 +131,12 @@ class DeviceSimulator:
             return
         try:
             payload = {k: v for k, v in record.items() if k not in ["time", "ratio", "f_left", "f_right"]}
+            
+            if self.encrypt:
+                from src.utils.crypto import encrypt_payload
+                encrypted_str = encrypt_payload(payload)
+                payload = {"encrypted_payload": encrypted_str}
+
             headers = {"X-API-Key": self.api_key}
             if self.api_token:
                 headers["Authorization"] = f"Bearer {self.api_token}"

@@ -54,6 +54,7 @@ API_KEY = os.environ.get("API_KEY", "myh")
 JWT_SECRET = os.environ.get("JWT_SECRET", "moon_dance_change_me_please_set_env_32bytes")
 JWT_ALGORITHM = os.environ.get("JWT_ALGORITHM", "HS256")
 JWT_EXPIRE_SECONDS = int(os.environ.get("JWT_EXPIRE_SECONDS", "3600"))
+PAYLOAD_ENCRYPTION_KEY = os.environ.get("PAYLOAD_ENCRYPTION_KEY", "f8SxB5xMZyCjV2kI4uJ2T0-G9R3gU4L8M-5I0K2oBqc=")
 
 # Redis配置
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")

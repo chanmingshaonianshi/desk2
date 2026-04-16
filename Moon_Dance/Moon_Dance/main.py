@@ -54,7 +54,7 @@ def _resolve_api_token(api_token, api_url, login_url, verify_ssl):
     return token
 
 
-def run_no_gui(device_count=10, duration=0, interval=1.0, api_url=None, api_token=None, login_url=None, verify_ssl=True, use_mq=True):
+def run_no_gui(device_count=10, duration=0, interval=1.0, api_url=None, api_token=None, login_url=None, verify_ssl=True, use_mq=True, encrypt=False):
     import time
     from src.core.device_simulator import DeviceSimulator
     from src.core.report_manager import export_daily_reports_concurrently
@@ -80,6 +80,7 @@ def run_no_gui(device_count=10, duration=0, interval=1.0, api_url=None, api_toke
             api_url=api_url,
             api_token=resolved_token,
             verify_ssl=verify_ssl,
+            encrypt=encrypt,
         )
         record = simulator.measure()
         log_msg = f"[{record['time']}] [Dev {dev_id:02d}] L:{record['f_left']:.1f} R:{record['f_right']:.1f} Ratio:{record['ratio'] * 100:.1f}%"
@@ -133,6 +134,7 @@ def main():
         parser.add_argument("--login-url", default=None, help="Login endpoint for auto fetching bearer token")
         parser.add_argument("--insecure", action="store_true", help="Disable SSL certificate verification for simulator uploads")
         parser.add_argument("--no-mq", action="store_true", help="Disable MQ publishing and only upload to API")
+        parser.add_argument("--encrypt", action="store_true", help="Encrypt JSON payload before sending")
         args, _unknown = parser.parse_known_args()
 
         if args.no_gui:
@@ -145,6 +147,7 @@ def main():
                 login_url=args.login_url,
                 verify_ssl=not args.insecure,
                 use_mq=not args.no_mq,
+                encrypt=args.encrypt,
             )
             return
 
