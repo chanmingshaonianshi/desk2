@@ -174,7 +174,9 @@ def _handle_upload_request() -> Tuple[Any, int]:
     if "encrypted_payload" in payload:
         try:
             from src.utils.crypto import decrypt_payload
+            print(f"[🔐API端拦截] 侦测到加密载荷密文: {payload['encrypted_payload'][:60]}... 正在底层进行解密操作")
             payload = decrypt_payload(payload["encrypted_payload"])
+            print(f"[🔐API端解密成功] 密文已还原！真实原始设备号: {payload.get('device_id')}")
         except Exception as e:
             return _json_error(f"数据解密失败: {str(e)}", 400)
 

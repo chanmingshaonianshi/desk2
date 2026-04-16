@@ -136,6 +136,8 @@ class DeviceSimulator:
                 from src.utils.crypto import encrypt_payload
                 encrypted_str = encrypt_payload(payload)
                 payload = {"encrypted_payload": encrypted_str}
+                # 为了演示效果，专门在控制台打印出一小段加密后的密文
+                print(f"[🔐安全传输] 正在发送强加密载荷 (前60位): {encrypted_str[:60]}...")
 
             headers = {"X-API-Key": self.api_key}
             if self.api_token:
@@ -151,9 +153,9 @@ class DeviceSimulator:
             if response.status_code not in (200, 202):
                 print(f"[API Error] Device {self.device_id}: Status {response.status_code}")
                 return
-            print(f"[API OK] Device {self.device_id}: Req {payload['request_id'][:8]} -> {response.status_code}")
+            print(f"[API OK] Device {self.device_id}: Req {record['request_id'][:8]} -> {response.status_code}")
         except Exception as e:
-            print(f"[API Error] Device {self.device_id}: {e}")
+            print(f"[API Error] Device {self.device_id}: {repr(e)}")
     
     def get_history(self):
         """获取历史测量数据"""
