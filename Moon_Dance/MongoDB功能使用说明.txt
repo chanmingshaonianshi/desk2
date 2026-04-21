@@ -1,0 +1,45 @@
+# MongoDB 数据库接入使用指南
+
+## 一、 功能说明
+项目已经完成了本地 MongoDB 的接入。底层代码中不需做任何主流程的修改，原有的日志数据挂载点会自动触发 `insert_record_async` 方法。只要你的 MongoDB 服务器运行正常（且账号密码为 admin:123456 位于本地 27017 端口），在模拟器每次生成或接收数据时，数据就会实时同步写入。
+
+由于 MongoDB 在写入数据时具备“惰性创建”的机制（即写入数据时如无数据库或集合会自动创建），因此会自动直接创建并写入：
+- 数据库名：`pressure_simulator`
+- 集合名：`pressure_data`
+
+## 二、 如何调用查询接口
+为了供后续的业务需求调用（例如增加按时间的范围筛选 API 等），底层已预留了两个即开即用的查询方法。你可以在 UI 组件面板或者 `routes.py` 等任何你需要拿数据的地方直接引入调用：
+
+```python
+from src.utils.mongo_db import get_latest_10_records, query_records_by_time
+
+# 1. 获取近期数据：查询最新 10 条压力数据
+latest_docs = get_latest_10_records()
+# 自动按逆序倒排返回最新的10条结果
+
+# 2. 获取历史数据：按时间段查询
+start_ms = 1682000000000  # 开始时间（毫秒时间戳格式）
+end_ms = 1682000100000    # 结束时间（毫秒时间戳格式）
+history_docs = query_records_by_time(start_ms, end_ms)
+```
+
+## 三、 是否可以直接部署到服务器？应该怎么使用？
+**答案：是的，代码层面直接兼容，可以直接作为终版部署到服务器，不需要也不能修改原有的业务逻辑！**
+
+但因为部署时往往会改变数据库的内网 IP 或者账号密码，为了做到“仅改地址即可适配”，我为你做了环境变量解耦设计。
+
+代码会优先读取系统的环境变量，如果环境变量不存在，才兼容继续使用目前的 `localhost`。因此服务器环境下怎么配置：
+
+### 服务器 Docker Compose 环境设置指南：
+目前你的项目在跑 Docker 部署 `deploy/docker-compose.yml`，在 Docker 环境中，`localhost` 会指向容器它自己，而不是宿主机的数据库！如果你需要在服务器上连外置的 MongoDB，你可以修改 `docker-compose.yml` 文件：
+
+**如果你有一个建立好的外部 MongoDB（或宿主机运行的 MongoDB）：**
+给 `api` 以及 `worker` 服务的 `environment` 配置块中追加 `MONGO_URI` 变量，填入外部实际的 IP：
+```yaml
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      # ...其他的原有环境变量信息...
+      - MONGO_URI=mongodb://admin:123456@宿主机真实IP或者内网IP:27017/ 
+```
+
+一旦注入了该变量，代码部署到服务器上后便会自动识别并打通这个服务器专属地址，本地还是读本地默认化，互不干扰！

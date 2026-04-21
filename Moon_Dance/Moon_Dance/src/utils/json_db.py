@@ -96,6 +96,13 @@ def append_realtime_log(record, log_file_path=None):
     with _DB_LOCK:
         with open(target_file, 'a', encoding='utf-8', newline='') as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
+            
+    # 异步存储到 MongoDB
+    try:
+        from src.utils.mongo_db import insert_record_async
+        insert_record_async(payload)
+    except Exception as e:
+        print(f"[Log Error] 无法将数据保存到MongoDB: {e}")
 
 
 def mark_request_processed(request_id):

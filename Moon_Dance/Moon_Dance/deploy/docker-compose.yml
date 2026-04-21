@@ -56,6 +56,7 @@ services:
       - API_USE_SSL=0
       - API_CERT_CN=localhost
       - API_KEY=myh
+      # - MONGO_URI=mongodb://admin:123456@host.docker.internal:27017/ # MongoDB宿主机连接(启用需解开注释)
     volumes:
       - api_data:/app/data
       - ../certs:/app/certs:ro
@@ -75,6 +76,7 @@ services:
     command: celery -A src.core.worker worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
+      # - MONGO_URI=mongodb://admin:123456@host.docker.internal:27017/ # MongoDB宿主机连接(启用需解开注释)
     volumes:
       - api_data:/app/data
     depends_on:

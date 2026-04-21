@@ -479,9 +479,9 @@ src/api/routes.py (_handle_upload_request)
 Redis (Celery Broker)
     ▼
 src/core/worker.py (Celery 异步 Worker)
-    │ 构造记录 → 写实时日志 → 写设备历史 → 标记幂等 ID
+    │ 构造记录 → 写实时日志日志 & 异步落盘 MongoDB → 写设备历史 → 标记幂等 ID
     ▼
-data/realtime_logs/*.jsonl  +  data/realtime_logs/processed_ids.json
+data/realtime_logs/*.jsonl + MongoDB (pressure_simulator库) + data/realtime_logs/processed_ids.json
 ```
 
 ### 扩展链路（Redis Stream MQ）
@@ -530,6 +530,7 @@ docs/
 | **MQ消费节点** | `src/mq_workers/*` | validator→validated、writer→写文件、logger→统计 |
 | **配置中心** | `src/config/settings.py` | 所有配置常量、环境变量读取、路径计算 |
 | **数据存储** | `src/utils/json_db.py` | JSONL 追加写日志、幂等 ID 管理、历史数据读写 |
+| **持久化DB引擎** | `src/utils/mongo_db.py` | 异步 MongoDB 压力数据实时直写，支持倒排与区间查询 |
 | **设备模拟器** | `src/core/device_simulator.py` | 模拟传感器数据生成，双路上报（API + MQ） |
 | **客户端启动** | `main.py` | GUI 模式或无头模式，10 路并发模拟 |
 | **MQ节点管理** | `scripts/mq_manager.py` | 启停 validator/writer/logger，管理副本数 |
