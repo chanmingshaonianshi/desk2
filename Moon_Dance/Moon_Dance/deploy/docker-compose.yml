@@ -18,6 +18,20 @@ services:
     networks:
       - moondance-net
 
+  # MongoDB 数据库服务
+  mongodb:
+    image: mongo:6.0
+    restart: always
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=123456
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - moondance-net
+
   # Nginx 负载均衡
   nginx:
     image: nginx:alpine
@@ -56,7 +70,7 @@ services:
       - API_USE_SSL=0
       - API_CERT_CN=localhost
       - API_KEY=myh
-      # - MONGO_URI=mongodb://admin:123456@host.docker.internal:27017/ # MongoDB宿主机连接(启用需解开注释)
+      - MONGO_URI=mongodb://admin:123456@mongodb:27017/
     volumes:
       - api_data:/app/data
       - ../certs:/app/certs:ro
@@ -76,7 +90,7 @@ services:
     command: celery -A src.core.worker worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
-      # - MONGO_URI=mongodb://admin:123456@host.docker.internal:27017/ # MongoDB宿主机连接(启用需解开注释)
+      - MONGO_URI=mongodb://admin:123456@mongodb:27017/
     volumes:
       - api_data:/app/data
     depends_on:
@@ -87,6 +101,7 @@ services:
 volumes:
   redis_data:
   api_data:
+  mongo_data:
 
 networks:
   moondance-net:
