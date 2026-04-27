@@ -377,9 +377,12 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose
 # ----------------------------------------------------------
 # 服务器端命令（SSH 登录后在 Linux/bash 中执行）
 # ----------------------------------------------------------
-# 前提：先登录服务器，进入项目目录
+# 前提 1：先登录服务器，进入项目目录
 # ssh ubuntu@124.220.79.133
 # cd ~/desk2/Moon_Dance/Moon_Dance
+
+# 前提 2：如果是第一次执行验证脚本，需要补充服务器运行环境（防止报错No module named pymongo）
+sudo apt update -y && pip3 install pymongo apscheduler --break-system-packages || true
 
 # 1) 运行 MongoDB 连接测试（验证数据链路通畅）
 cd ~/desk2/Moon_Dance/Moon_Dance && python3 test_mongo.py

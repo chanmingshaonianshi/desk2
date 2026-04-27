@@ -85,7 +85,7 @@ def show_daily_stats(db, limit=10):
 
 def show_leaderboard(db, limit=10):
     """显示健康坐姿排行榜"""
-    print(f"\n===== 🏆 健康坐姿排行榜 TOP {limit} =====")
+    print(f"\n===== 健康坐姿排行榜 TOP {limit} =====" )
     col = db["daily_stats"]
     records = list(col.find().sort("health_score", DESCENDING).limit(limit))
     if not records:
@@ -114,9 +114,9 @@ def main():
 
     try:
         db = get_db()
-        print("✅ MongoDB 连接成功！")
+        print("[OK] MongoDB 连接成功！")
     except Exception as e:
-        print(f"❌ MongoDB 连接失败: {e}")
+        print(f"[FAIL] MongoDB 连接失败: {e}")
         print("   请检查 MongoDB 是否在 27017 端口正常运行。")
         sys.exit(1)
 
