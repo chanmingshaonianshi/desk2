@@ -36,8 +36,7 @@ def show_count(db):
     """显示各集合数据量"""
     print("\n========= MongoDB 数据量统计 =========")
     collections = {
-        "pressure_data": "原始压力数据（主链路写入）",
-        "raw_device_data": "设备上报数据（小程序链路）",
+        "pressure_data": "设备上报原始数据（主链路）",
         "daily_stats": "每日汇总统计",
         "users": "注册用户信息"
     }

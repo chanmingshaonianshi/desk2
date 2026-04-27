@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 每日数据汇总定时任务
-功能：每天凌晨从 raw_device_data 中读取前一天的海量原始数据，
+功能：每天凌晨从 pressure_data 中读取前一天的海量原始数据，
      按设备/用户聚合计算"总入座时长"、"不良坐姿次数"和"健康评分(0-100)"，
      将汇总结果写入 daily_stats 集合。
 使用方式：
@@ -132,7 +132,7 @@ def aggregate_daily_data(db, target_date=None):
     start_ms = int(day_start.timestamp() * 1000)
     end_ms = int(day_end.timestamp() * 1000)
 
-    raw_col = db["raw_device_data"]
+    raw_col = db["pressure_data"]
     daily_col = db["daily_stats"]
     users_col = db["users"]
 
@@ -262,8 +262,8 @@ def ensure_indexes(db):
     """确保必要的索引存在（首次运行时自动创建）"""
     print("  🔧 检查并创建索引...")
 
-    # raw_device_data 索引
-    raw_col = db["raw_device_data"]
+    # pressure_data 索引
+    raw_col = db["pressure_data"]
     raw_col.create_index([("device_id", ASCENDING), ("timestamp", ASCENDING)],
                          name="idx_device_timestamp")
 
