@@ -75,7 +75,7 @@ def get_device_realtime(device_id: str):
     """
     获取指定设备的实时状态
 
-    从 raw_device_data 中读取该设备最近一条数据，
+    从 pressure_data 中读取该设备最近一条数据，
     并计算当前连续入座时长。
 
     返回数据：
@@ -87,7 +87,7 @@ def get_device_realtime(device_id: str):
     """
     try:
         db = _get_db()
-        raw_col = db["raw_device_data"]
+        raw_col = db["pressure_data"]
 
         # ---- 获取该设备最近一条数据 ----
         latest = raw_col.find_one(
