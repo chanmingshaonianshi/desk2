@@ -15,6 +15,7 @@ from OpenSSL import crypto
 
 from src.api.auth import auth_bp
 from src.api.routes import api_bp
+from src.api.miniapp_routes import miniapp_bp
 from src.config.settings import BASE_PATH, CA_CERT_FILE, CA_KEY_FILE, CERT_DIR, CERT_FILE, KEY_FILE, LOG_DIR
 
 
@@ -132,6 +133,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(miniapp_bp)  # 小程序接口路由
 
     @app.get("/health")
     def health():

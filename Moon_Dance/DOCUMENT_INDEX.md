@@ -53,12 +53,13 @@ Moon_Dance/
 
 ### `src/api/` — HTTP 接口层
 
-**职责**：实现所有对外 HTTP API 接口，包括身份鉴权和业务路由，是前后端数据传输的入口。
+**职责**：实现所有对外 HTTP API 接口，包括身份鉴权、数据上传路由和小程序服务路由，是前后端数据传输的入口。
 
 | 文件 | 作用 |
 |------|------|
 | `auth.py` | **身份鉴权模块** |
-| `routes.py` | **API 路由与业务调度模块** |
+| `routes.py` | **API 路由与业务调度模块**（设备数据上传） |
+| `miniapp_routes.py` | **小程序 API 路由模块**（实时状态、历史统计、排行榜、用户管理） |
 
 ---
 
@@ -106,6 +107,7 @@ Moon_Dance/
 |------|------|
 | `json_db.py` | **JSON 轻量存储与幂等管理** |
 | `excel_exporter.py` | **Excel 报表导出工具** |
+| `mongo_db.py` | **MongoDB 数据存储模块**（异步写入压力数据、数据查询接口） |
 
 ---
 
@@ -124,6 +126,7 @@ Moon_Dance/
 | 文件 | 作用 |
 |------|------|
 | `mq_manager.py` | **MQ节点管理脚本（启停/状态）** |
+| `daily_aggregation.py` | **每日数据汇总定时任务**（从 `raw_device_data` 聚合计算健康评分，写入 `daily_stats`） |
 | `docker_entrypoint.py` | **Docker容器入口脚本** |
 | `auto_scaler.py` | **动态扩缩容启动入口**（委托 `src/core/dynamic_scaler.py` 执行） |
 | `ops/scaler.py` | **旧版扩缩容逻辑**（已保留作历史参考，核心逻辑已迁移至 `src/core/dynamic_scaler.py`） |
@@ -172,7 +175,7 @@ Moon_Dance/
 
 **核心逻辑**：
 - `_ensure_ca_and_server_cert()`：**自签名 TLS 证书自动生成** — 用 `pyOpenSSL` 在首次启动时自动生成自签名 CA 证书和服务端证书，支持 IP / DNS SAN，避免每次手动配置 SSL。
-- `create_app()`：**Flask App 工厂函数** — 创建 Flask 实例，启用 CORS，注册 `before_request` 钩子写请求日志到 `logs/` 目录，注册 `auth_bp` 和 `api_bp` 两个蓝图，暴露 `/health` 健康检查接口。
+- `create_app()`：**Flask App 工厂函数** — 创建 Flask 实例，启用 CORS，注册 `before_request` 钩子写请求日志到 `logs/` 目录，注册 `auth_bp`、`api_bp` 和 `miniapp_bp` 三个蓝图，暴露 `/health` 健康检查接口。
 - `main()`：解析启动参数（`--host` / `--port` / `--cn` / `--no-ssl` / `--gen-certs-only`），以 HTTPS 或 HTTP 模式启动 Flask（多线程模式 `threaded=True`）。
 
 ---
@@ -194,6 +197,28 @@ Moon_Dance/
 **两种认证路径**：
 - **JWT 路径**：`POST /login` → 获取 Token → 携带 `Authorization: Bearer <token>` 调用 `/api/v1/upload`
 - **API Key 路径**：直接携带 `X-API-Key: <key>` 调用 `/api/v2/ingest`（无需登录）
+
+---
+
+### `src/api/miniapp_routes.py` — 小程序 API 路由模块（新增）
+
+**类型**：Flask Blueprint（`/api/miniapp` 前缀）  
+**职责**：为微信小程序端提供实时坐姿状态查询、个人历史统计、多用户健康排行榜、用户注册与设置管理等接口。
+
+**API 接口列表**：
+
+| 接口 | 方法 | 说明 |
+|------|------|------|
+| `GET /api/miniapp/device/<device_id>/realtime` | 实时状态 | 返回最新坐姿状态、连续入座时长、设备在线状态 |
+| `GET /api/miniapp/user/<user_id>/stats` | 历史统计 | 按天数或日期范围查询每日汇总，返回含平均评分的聚合结果 |
+| `GET /api/miniapp/leaderboard` | 排行榜 | 按健康评分倒序取 TOP N，`$lookup` 关联用户昵称 |
+| `POST /api/miniapp/user/register` | 用户注册 | 小程序 openid 绑定设备，upsert 避免重复创建 |
+| `PUT /api/miniapp/user/<user_id>/settings` | 设置更新 | 修改久坐提醒阈值、排行榜可见性等 |
+
+**关键实现**：
+- 排行榜使用 MongoDB 聚合管道（`$match` → `$sort` → `$limit` → `$lookup` → `$project`），一次查询完成排名和用户信息关联
+- 实时状态接口通过回溯最近 4 小时数据计算连续入座时长，相邻数据间隔 > 30 秒视为中断
+- 所有响应使用统一 `{ok, message, data}` 格式
 
 ---
 
@@ -423,10 +448,28 @@ python -m src.core.live_monitor --source upload --follow
 **职责**：提供无需数据库的轻量级数据落盘方案，以及请求幂等 ID 管理。
 
 **关键函数**：
-- `append_realtime_log(record, log_file_path=None)`：将记录追加写入 `.jsonl` 文件（线程安全，`RLock` 保护），支持指定自定义日志路径（上传日志 vs 实时日志）
+- `append_realtime_log(record, log_file_path=None)`：将记录追加写入 `.jsonl` 文件（线程安全，`RLock` 保护），支持指定自定义日志路径（上传日志 vs 实时日志），同时异步写入 MongoDB
 - `append_record(device_id, record)`：读取全量 JSON → 追加记录 → 写回，用于设备历史数据存储（适合低频写入）
 - `mark_request_processed(request_id)`：将幂等 ID 追加到 `processed_ids.json`，自动限制最大 10000 条防止文件膨胀
 - `load_db()` / `save_db(data)`：全量读写 `history_data.json`，兼容新格式（`device_001`字符串键）和旧格式（整数键）
+
+---
+
+### `src/utils/mongo_db.py` — MongoDB 数据存储模块
+
+**类型**：数据库持久化工具  
+**职责**：异步向本地 MongoDB 数据库写入模拟器压力数据，提供数据查询接口。预留了服务器部署环境适配（环境变量 `MONGO_URI`）。
+
+**关键配置**：
+- `MONGO_URI`：默认 `mongodb://admin:123456@localhost:27017/`
+- `DB_NAME`：默认 `pressure_simulator`
+- `COLLECTION_NAME`：默认 `pressure_data`
+
+**关键函数**：
+- `get_mongo_collection()`：懒加载单例连接，带 2 秒超时和 ping 健康检查
+- `insert_record_async(record)`：在独立线程中深拷贝数据后写入 MongoDB，主线程无阻塞
+- `get_latest_10_records()`：按 `_id` 倒序查询最新 10 条数据
+- `query_records_by_time(start_ms, end_ms)`：按 `logged_at` 毫秒级时间戳区间查询历史数据
 
 ---
 
@@ -484,6 +527,44 @@ src/core/worker.py (Celery 异步 Worker)
 data/realtime_logs/*.jsonl + MongoDB (pressure_simulator库) + data/realtime_logs/processed_ids.json
 ```
 
+### 小程序链路（每日汇总 + 排行榜）
+
+```
+MongoDB: raw_device_data（高频原始数据，由主链路实时写入）
+    ▼
+scripts/daily_aggregation.py (每日凌晨 00:05 定时任务)
+    │ 1. $match 筛选前一天数据
+    │ 2. $group 按 device_id 聚合
+    │ 3. 计算: 总入座时长 + 不良坐姿次数 + 健康评分(0-100)
+    │ 4. upsert 写入结果
+    ▼
+MongoDB: daily_stats（每日汇总统计）
+    ▼
+src/api/miniapp_routes.py (小程序 API 蓝图)
+    ├─▶ GET /api/miniapp/device/<id>/realtime   → 实时坐姿状态
+    ├─▶ GET /api/miniapp/user/<id>/stats        → 个人历史统计
+    ├─▶ GET /api/miniapp/leaderboard            → 健康排行榜 TOP N
+    ├─▶ POST /api/miniapp/user/register         → 用户注册/绑定
+    └─▶ PUT /api/miniapp/user/<id>/settings     → 设置更新
+```
+
+### MongoDB 集合关系
+
+```
+┌──────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
+│     users        │     │   raw_device_data    │     │   daily_stats    │
+│──────────────────│     │──────────────────────│     │──────────────────│
+│ _id (ObjectId)   │◄────│ user_id (可选)       │     │ user_id          │
+│ openid (唯一)    │     │ device_id            │────►│ device_id        │
+│ device_id        │────►│ timestamp (ms)       │     │ date (YYYY-MM-DD)│
+│ total_score      │     │ sensors {}           │     │ health_score     │
+│ settings {}      │     │ analysis {}          │     │ score_breakdown  │
+└──────────────────┘     │ is_seated            │     │ bad_posture_count│
+                         └──────────────────────┘     └──────────────────┘
+                              │ 定时聚合 │                    ▲
+                              └──────────┘────────────────────┘
+```
+
 ### 扩展链路（Redis Stream MQ）
 
 ```
@@ -522,9 +603,11 @@ docs/
 
 | 层级 | 入口文件 | 核心职责 |
 |------|---------|---------|
-| **服务器启动** | `main_api.py` | Flask App 创建、TLS 证书生成、蓝图注册、请求日志 |
+| **服务器启动** | `main_api.py` | Flask App 创建、TLS 证书生成、蓝图注册（auth + api + miniapp）、请求日志 |
 | **鉴权层** | `src/api/auth.py` | JWT 签发验证（`/login`）、API Key 校验、`@token_required` / `@api_key_required` 装饰器 |
 | **数据接口层** | `src/api/routes.py` | `/api/v1/upload`（JWT）、`/api/v2/ingest`（API Key）、幂等去重、Celery 任务投递 |
+| **小程序接口层** | `src/api/miniapp_routes.py` | 实时状态、历史统计、排行榜、用户注册/设置（`/api/miniapp/*`） |
+| **每日汇总任务** | `scripts/daily_aggregation.py` | 凌晨定时聚合 `raw_device_data` → 计算健康评分 → 写入 `daily_stats` |
 | **主异步链路** | `src/core/worker.py` | Celery + Redis 消费上传任务，异步写盘 |
 | **扩展MQ客户端** | `src/core/mq_client.py` | Redis Stream 消息发布、本地缓存、指数退避重传 |
 | **MQ消费节点** | `src/mq_workers/*` | validator→validated、writer→写文件、logger→统计 |
