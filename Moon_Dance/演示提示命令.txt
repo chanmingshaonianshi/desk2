@@ -1,4 +1,4 @@
-﻿=======================================================
+=======================================================
 Moon_Dance 数据服务系统 - 项目演示命令指南
 =======================================================
 
@@ -381,83 +381,27 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose
 # ssh ubuntu@124.220.79.133
 # cd ~/desk2/Moon_Dance/Moon_Dance
 
-# 1) 运行 MongoDB 连接测试脚本（验证数据链路通畅）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 test_mongo.py
+# 1) 运行 MongoDB 连接测试（验证数据链路通畅）
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 test_mongo.py
 
-# 2) 查看 MongoDB 各集合的数据量统计
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 -c "
-from pymongo import MongoClient
-c = MongoClient('mongodb://admin:123456@localhost:27017/')
-db = c['pressure_simulator']
-print('========= MongoDB 数据量统计 =========')
-print(f'  pressure_data  (原始压力数据): {db.pressure_data.count_documents({})} 条')
-print(f'  raw_device_data (设备上报数据): {db.raw_device_data.count_documents({})} 条')
-print(f'  daily_stats     (每日汇总)   : {db.daily_stats.count_documents({})} 条')
-print(f'  users           (用户信息)   : {db.users.count_documents({})} 条')
-print('======================================')
-"
+# 2) 一键查看 MongoDB 全部信息（数据量 + 最新数据 + 汇总 + 排行榜）
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/mongo_check.py
 
-# 3) 查看最新 5 条原始设备数据（验证数据正在实时写入）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 -c "
-from pymongo import MongoClient, DESCENDING
-c = MongoClient('mongodb://admin:123456@localhost:27017/')
-col = c['pressure_simulator']['pressure_data']
-print('===== 最新 5 条原始设备数据 =====')
-for d in col.find().sort('_id', DESCENDING).limit(5):
-    dev = d.get('device_id', '?')
-    t = d.get('time', '?')
-    fl = d.get('f_left', 0)
-    fr = d.get('f_right', 0)
-    print(f'  设备:{dev} | 时间:{t} | 左:{fl:.1f}N 右:{fr:.1f}N')
-"
+# 3) 也可以分开看：
+python3 scripts/mongo_check.py --count     # 只看各集合数据量
+python3 scripts/mongo_check.py --latest    # 只看最新原始数据
+python3 scripts/mongo_check.py --stats     # 只看每日汇总结果
+python3 scripts/mongo_check.py --rank      # 只看排行榜 TOP 10
 
 # 4) 手动执行每日数据汇总（立即聚合昨天的数据，生成健康评分）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 scripts/daily_aggregation.py --run-now
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --run-now
 
 # 5) 手动补跑指定日期的汇总（把日期替换成你压测当天的日期）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 scripts/daily_aggregation.py --date 2026-04-27
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --date 2026-04-27
 
-# 6) 查看 daily_stats 汇总结果（验证健康评分是否正确计算）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 -c "
-from pymongo import MongoClient, DESCENDING
-c = MongoClient('mongodb://admin:123456@localhost:27017/')
-col = c['pressure_simulator']['daily_stats']
-print('===== 每日汇总结果（最近 10 条） =====')
-for d in col.find().sort('date', DESCENDING).limit(10):
-    dt = d.get('date')
-    dev = d.get('device_id')
-    mins = d.get('total_seated_minutes', 0)
-    bad = d.get('bad_posture_count', 0)
-    score = d.get('health_score', 0)
-    print(f'  日期:{dt} | 设备:{dev} | 入座:{mins}分钟 | 不良姿势:{bad}次 | 健康评分:{score}分')
-"
-
-# 7) 查看排行榜数据（按健康评分倒序排列，取前 10 名）
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 -c "
-from pymongo import MongoClient, DESCENDING
-c = MongoClient('mongodb://admin:123456@localhost:27017/')
-col = c['pressure_simulator']['daily_stats']
-print('===== 健康坐姿排行榜 TOP 10 =====')
-rank = 1
-for d in col.find().sort('health_score', DESCENDING).limit(10):
-    dev = d.get('device_id')
-    score = d.get('health_score', 0)
-    mins = d.get('total_seated_minutes', 0)
-    print(f'  第{rank}名: 设备 {dev} | 评分 {score} 分 | 入座 {mins} 分钟')
-    rank += 1
-"
-
-# 8) 启动每日汇总定时任务守护进程（后台常驻，凌晨 00:05 自动执行）
+# 6) 启动每日汇总定时任务守护进程（后台常驻，凌晨 00:05 自动执行）
 # 提示：演示时可以不启动，手动 --run-now 即可展示效果
-cd ~/desk2/Moon_Dance/Moon_Dance
-python3 scripts/daily_aggregation.py --daemon
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --daemon
 
 # ----------------------------------------------------------
 # 服务器端：小程序 API 接口验证（通过已运行的 Docker 集群测试）
@@ -489,6 +433,10 @@ curl -sk -X PUT https://localhost/api/miniapp/user/wx_test_user_001/settings -H 
 # 本地测试 MongoDB 连接
 cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
 python test_mongo.py
+
+# 本地一键查看 MongoDB 全部数据
+cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+python scripts/mongo_check.py
 
 # 本地手动汇总
 cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
