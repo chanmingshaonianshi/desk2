@@ -135,6 +135,13 @@ def create_app() -> Flask:
     app.register_blueprint(api_bp)
     app.register_blueprint(miniapp_bp)  # 小程序接口路由
 
+    # 初始化 MySQL 数据库表（自动建表，幂等操作）
+    try:
+        from src.utils.mysql_db import init_db
+        init_db()
+    except Exception as e:
+        print(f"[WARNING] MySQL 初始化失败（用户/排行榜功能将不可用）: {e}")
+
     @app.get("/health")
     def health():
         return jsonify({"ok": True}), 200

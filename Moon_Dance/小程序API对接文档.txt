@@ -1,0 +1,319 @@
+===============================================================
+Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
+===============================================================
+前端同学请参照此文档进行小程序端开发对接。
+后端基础地址（本地开发）: http://localhost:5000
+后端基础地址（云端部署）: https://www.myhjmycjh.tech
+
+所有接口统一响应格式：
+{
+    "ok": true/false,
+    "message": "描述信息",
+    "data": { ... }   // 成功时返回具体数据，失败时为 null
+}
+
+===============================================================
+一、数据库架构说明（双数据库）
+===============================================================
+
+MongoDB（原始传感器明细数据）
+  - pressure_data 集合：存储每一条实时采集数据
+    · device_id: 设备编号
+    · timestamp: 毫秒级时间戳
+    · sensors: { left_force_n, right_force_n }
+    · analysis: { deviation_ratio }
+    · is_seated: 是否在座
+
+MySQL（用户数据 & 关联关系）
+  - users 表：用户信息、设备绑定、久坐提醒设置、隐私设置
+  - user_daily_stats 表：每日健康评分、入座时长、不良坐姿次数等
+
+===============================================================
+二、健康评分算法说明
+===============================================================
+
+健康评分 = 坐姿质量得分(满分50) + 久坐提醒合规得分(满分50)
+
+维度1 - 坐姿质量得分 (0~50分)：
+  公式: posture_score = 良好坐姿占比 × 50
+  说明: 偏差比率 ≤ 10% 的数据视为"良好坐姿"
+
+维度2 - 久坐提醒合规得分 (0~50分)：
+  公式: compliance_score = (合规离座次数 / 总提醒次数) × 50
+  说明: 连续入座达到阈值(默认45分钟)触发提醒，
+        提醒后用户离开座位 ≥ 5 分钟视为"合规"。
+        当天无久坐提醒时默认满分。
+
+最终输出: 0~100 的整数健康评分
+
+===============================================================
+三、API 接口详情
+===============================================================
+
+---------------------------------------------------------------
+接口1: 获取设备实时状态
+---------------------------------------------------------------
+路径:   GET /api/miniapp/device/<device_id>/realtime
+数据源: MongoDB
+鉴权:   无需鉴权
+
+请求示例:
+  GET /api/miniapp/device/device_001/realtime
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "success",
+    "data": {
+        "device_id": "device_001",
+        "is_online": true,                    // 设备是否在线（60秒内有数据）
+        "last_update_ms": 1745920000000,      // 最后数据时间戳(ms)
+        "posture_status": "normal",           // "normal" | "bad"
+        "posture_label": "标准坐姿 ✅",       // 中文展示文案
+        "sensors": {
+            "left_force_n": 320.5,            // 左侧压力值(N)
+            "right_force_n": 315.2            // 右侧压力值(N)
+        },
+        "deviation_ratio": 0.0083,            // 偏差比率（小数）
+        "continuous_seated_minutes": 23.5,    // 当前连续入座时长(分钟)
+        "is_seated": true                     // 当前是否在座
+    }
+}
+
+错误响应 (404):
+{
+    "ok": false,
+    "message": "未找到设备 device_001 的数据",
+    "data": null
+}
+
+前端对接要点:
+  - 建议每 3~5 秒轮询一次此接口
+  - is_online=false 时显示"设备离线"
+  - posture_status="bad" 时前端可做红色警告提示
+  - continuous_seated_minutes 超过用户设置的阈值时触发久坐提醒
+
+---------------------------------------------------------------
+接口2: 获取个人历史统计
+---------------------------------------------------------------
+路径:   GET /api/miniapp/user/<user_id>/stats
+数据源: MySQL
+鉴权:   无需鉴权
+
+查询参数:
+  days  (int, 默认7)        — 查询最近N天
+  start (string, 可选)      — 起始日期 YYYY-MM-DD
+  end   (string, 可选)      — 结束日期 YYYY-MM-DD
+  注: start+end 优先级高于 days
+
+user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
+
+请求示例:
+  GET /api/miniapp/user/wx_test_user_001/stats?days=7
+  GET /api/miniapp/user/1/stats?start=2026-04-20&end=2026-04-27
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "success",
+    "data": {
+        "user_id": "1",
+        "nickname": "测试用户A",
+        "query_days": 7,
+        "summary": {
+            "avg_health_score": 82.3,              // 周期内平均健康评分
+            "total_seated_minutes": 2400.5,         // 周期内总入座时长
+            "total_bad_posture_count": 45,          // 周期内总不良坐姿次数
+            "total_accumulated_score": 1200         // 历史累计总积分
+        },
+        "daily_records": [
+            {
+                "date": "2026-04-21",
+                "total_seated_minutes": 360.0,
+                "bad_posture_count": 8,
+                "good_posture_ratio": 0.85,
+                "health_score": 88,
+                "score_breakdown": {
+                    "posture_score": 42.5,         // 坐姿质量得分(满分50)
+                    "compliance_score": 45.0        // 久坐合规得分(满分50)
+                },
+                "sedentary_compliance": {
+                    "reminders_total": 3,           // 当日久坐提醒次数
+                    "reminders_complied": 2          // 用户合规离座次数
+                },
+                "hourly_distribution": {
+                    "09": 50, "10": 40, "11": 30    // 每小时数据量
+                }
+            }
+            // ... 更多日期
+        ]
+    }
+}
+
+前端对接要点:
+  - daily_records 用于绘制折线图/柱状图
+  - hourly_distribution 可做当日活跃时段热力图
+  - score_breakdown 可做评分维度雷达图/饼图
+  - sedentary_compliance 可展示久坐合规统计
+
+---------------------------------------------------------------
+接口3: 获取排行榜
+---------------------------------------------------------------
+路径:   GET /api/miniapp/leaderboard
+数据源: MySQL
+鉴权:   无需鉴权
+
+查询参数:
+  date  (string, 可选)  — 指定日期 YYYY-MM-DD（默认今天，无数据回退昨天）
+  limit (int, 默认10)   — 返回前N名
+
+请求示例:
+  GET /api/miniapp/leaderboard
+  GET /api/miniapp/leaderboard?date=2026-04-27&limit=20
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "2026-04-27 排行榜数据",
+    "data": {
+        "date": "2026-04-27",
+        "total_participants": 30,              // 当日总参与人数
+        "leaderboard": [
+            {
+                "rank": 1,                     // 排名
+                "nickname": "张三",             // 昵称（来自 users 表）
+                "avatar_url": "",              // 头像 URL
+                "device_id": "device_003",     // 设备 ID
+                "health_score": 95,            // 健康评分
+                "total_seated_minutes": 380.0,
+                "bad_posture_count": 2,
+                "good_posture_ratio": 0.96,
+                "score_breakdown": {
+                    "posture_score": 48.0,
+                    "compliance_score": 47.0
+                }
+            }
+            // ... 更多排名
+        ]
+    }
+}
+
+前端对接要点:
+  - 排行榜按 health_score 倒序排列
+  - avatar_url 为空时前端使用默认头像
+  - 可用 date 参数切换查看历史日期排行
+
+---------------------------------------------------------------
+接口4: 用户注册/更新
+---------------------------------------------------------------
+路径:   POST /api/miniapp/user/register
+数据源: MySQL
+鉴权:   无需鉴权
+
+请求体 (JSON):
+{
+    "openid": "wx_user_xxx",           // 必填，微信 openid
+    "nickname": "用户昵称",             // 可选，默认"用户_xxx"
+    "avatar_url": "https://...",       // 可选
+    "device_id": "device_001"          // 可选，绑定的设备ID
+}
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "注册/更新成功",
+    "data": {
+        "id": 1,
+        "openid": "wx_user_xxx",
+        "nickname": "用户昵称",
+        "avatar_url": "https://...",
+        "device_id": "device_001",
+        "settings": {
+            "sedentary_threshold_min": 45,     // 久坐提醒阈值(分钟)
+            "reminder_enabled": true,          // 是否开启久坐提醒
+            "visible_in_leaderboard": true     // 排行榜是否可见
+        },
+        "total_score": 0,
+        "created_at": "2026-04-27T12:00:00",
+        "updated_at": "2026-04-27T12:00:00"
+    }
+}
+
+前端对接要点:
+  - 小程序首次启动时调用 wx.login() 获取 openid 后调用此接口
+  - 已存在的 openid 会执行更新操作（幂等）
+  - 返回的 id 即为后续接口中的 user_id
+
+---------------------------------------------------------------
+接口5: 更新用户设置
+---------------------------------------------------------------
+路径:   PUT /api/miniapp/user/<user_id>/settings
+数据源: MySQL
+鉴权:   无需鉴权
+
+user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
+
+请求体 (JSON，所有字段可选，传哪个改哪个):
+{
+    "sedentary_threshold_min": 30,     // 久坐提醒阈值，范围 10~120 分钟
+    "reminder_enabled": true,          // 是否开启久坐提醒
+    "visible_in_leaderboard": false    // 是否在排行榜中展示
+}
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "设置更新成功",
+    "data": {
+        "id": 1,
+        "openid": "wx_user_xxx",
+        "nickname": "用户昵称",
+        "avatar_url": "",
+        "device_id": "device_001",
+        "settings": {
+            "sedentary_threshold_min": 30,
+            "reminder_enabled": true,
+            "visible_in_leaderboard": false
+        },
+        "total_score": 580,
+        "created_at": "2026-04-20T08:00:00",
+        "updated_at": "2026-04-29T08:50:00"
+    }
+}
+
+前端对接要点:
+  - 只需传递要修改的设置项，未传的保持不变
+  - sedentary_threshold_min 后端限制 10~120 分钟
+  - visible_in_leaderboard=false 时用户不出现在排行榜中
+
+===============================================================
+四、已删除/暂不开发的功能
+===============================================================
+
+以下功能已明确移除，前端无需对接：
+  ✗ 社交分享模块（日报/周报卡片生成、分享到微信朋友圈）
+
+===============================================================
+五、前端开发建议
+===============================================================
+
+1. 页面结构建议：
+   - 首页：设备实时状态 + 当前连续入座时长 + 久坐提醒
+   - 统计页：近7天/30天趋势图 + 评分维度分析
+   - 排行榜页：当日/历史排行 + 个人排名
+   - 我的页：用户信息 + 设备绑定 + 久坐提醒设置
+
+2. 实时状态轮询：
+   - 建议 3~5 秒轮询 /device/<id>/realtime
+   - 小程序切到后台时停止轮询，切回前台时恢复
+
+3. 久坐提醒逻辑（前端侧）：
+   - 从 realtime 接口读取 continuous_seated_minutes
+   - 与用户设置的 sedentary_threshold_min 比较
+   - 达到阈值时弹出提醒，建议离座休息 ≥ 5 分钟
+
+4. 错误处理：
+   - 所有接口统一检查 ok 字段
+   - ok=false 时展示 message 字段的中文错误信息
+
+===============================================================

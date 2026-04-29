@@ -59,6 +59,9 @@ PAYLOAD_ENCRYPTION_KEY = os.environ.get("PAYLOAD_ENCRYPTION_KEY", "f8SxB5xMZyCjV
 # Redis配置
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+# MySQL配置（用户数据、关联关系数据存储）
+MYSQL_URI = os.environ.get("MYSQL_URI", "mysql+pymysql://root:123456@localhost:3306/moondance?charset=utf8mb4")
+
 # 生产环境安全校验
 if os.environ.get("ENV") == "production" and JWT_SECRET == "moon_dance_change_me_please_set_env_32bytes":
     raise ValueError("生产环境必须设置JWT_SECRET环境变量，禁止使用默认值！")

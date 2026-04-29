@@ -5,6 +5,10 @@
 功能：为微信小程序提供实时状态查询、个人历史统计、排行榜等接口
 作用：小程序端通过这些接口获取展示数据，完成 CRUD 操作
 使用原因：与原有设备上报路由分离，保持清晰的模块职责划分
+
+数据库职责划分：
+    MongoDB → 实时传感器数据查询（pressure_data）
+    MySQL  → 用户管理、排行榜、历史统计汇总（users, user_daily_stats）
 """
 
 from __future__ import annotations
@@ -26,17 +30,26 @@ from src.utils.mongo_db import MONGO_URI, DB_NAME
 miniapp_bp = Blueprint("miniapp", __name__, url_prefix="/api/miniapp")
 
 # ============================================================
-# 数据库连接（复用项目统一配置）
+# MongoDB 连接（仅用于实时传感器数据查询）
 # ============================================================
 _mongo_client = None
 
 
-def _get_db():
-    """获取 MongoDB 数据库实例（懒加载单例）"""
+def _get_mongo_db():
+    """获取 MongoDB 数据库实例（懒加载单例）—— 仅用于 pressure_data 实时查询"""
     global _mongo_client
     if _mongo_client is None:
         _mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
     return _mongo_client[DB_NAME]
+
+
+# ============================================================
+# MySQL Session 工具
+# ============================================================
+def _get_mysql_session():
+    """获取 MySQL 数据库 Session"""
+    from src.utils.mysql_db import get_session
+    return get_session()
 
 
 def _json_ok(data: Any, message: str = "success") -> Tuple[Any, int]:
@@ -67,7 +80,7 @@ def _serialize_doc(doc: dict) -> dict:
 
 
 # ============================================================
-# API 1: 获取设备实时状态
+# API 1: 获取设备实时状态（数据源：MongoDB）
 # GET /api/miniapp/device/<device_id>/realtime
 # ============================================================
 @miniapp_bp.get("/device/<device_id>/realtime")
@@ -75,7 +88,7 @@ def get_device_realtime(device_id: str):
     """
     获取指定设备的实时状态
 
-    从 pressure_data 中读取该设备最近一条数据，
+    从 MongoDB pressure_data 中读取该设备最近一条数据，
     并计算当前连续入座时长。
 
     返回数据：
@@ -86,7 +99,7 @@ def get_device_realtime(device_id: str):
     - 设备在线状态
     """
     try:
-        db = _get_db()
+        db = _get_mongo_db()
         raw_col = db["pressure_data"]
 
         # ---- 获取该设备最近一条数据 ----
@@ -164,7 +177,7 @@ def get_device_realtime(device_id: str):
 
 
 # ============================================================
-# API 2: 获取个人历史统计
+# API 2: 获取个人历史统计（数据源：MySQL）
 # GET /api/miniapp/user/<user_id>/stats
 # 支持查询参数: ?days=7 (默认7天) / ?start=2026-04-20&end=2026-04-27
 # ============================================================
@@ -173,7 +186,7 @@ def get_user_stats(user_id: str):
     """
     获取指定用户的历史统计数据
 
-    从 daily_stats 中查询该用户的每日汇总数据。
+    从 MySQL user_daily_stats 表中查询该用户的每日汇总数据。
     支持按天数或日期范围查询。
 
     返回数据：
@@ -181,19 +194,21 @@ def get_user_stats(user_id: str):
     - 汇总信息（周期内平均评分、总入座时长等）
     """
     try:
-        db = _get_db()
-        daily_col = db["daily_stats"]
-        users_col = db["users"]
+        from src.utils.mysql_db import User, UserDailyStat
 
-        # ---- 尝试解析 user_id ----
-        # 支持 ObjectId 和 openid 两种方式查找
+        session = _get_mysql_session()
+
+        # ---- 查找用户 ----
         user = None
+        # 尝试用 id 查找
         try:
-            user = users_col.find_one({"_id": ObjectId(user_id)})
-        except Exception:
+            uid = int(user_id)
+            user = session.query(User).filter(User.id == uid).first()
+        except (ValueError, TypeError):
             pass
+        # 尝试用 openid 查找
         if not user:
-            user = users_col.find_one({"openid": user_id})
+            user = session.query(User).filter(User.openid == user_id).first()
 
         # ---- 解析查询参数 ----
         days = request.args.get("days", type=int, default=7)
@@ -201,31 +216,27 @@ def get_user_stats(user_id: str):
         end_date = request.args.get("end")
 
         if start_date and end_date:
-            # 按日期范围查询
-            query_filter = {"date": {"$gte": start_date, "$lte": end_date}}
+            date_start = start_date
+            date_end = end_date
         else:
-            # 按最近N天查询
             today = datetime.now().date()
             start = today - timedelta(days=days - 1)
-            query_filter = {
-                "date": {
-                    "$gte": start.strftime("%Y-%m-%d"),
-                    "$lte": today.strftime("%Y-%m-%d")
-                }
-            }
+            date_start = start.strftime("%Y-%m-%d")
+            date_end = today.strftime("%Y-%m-%d")
 
-        # ---- 添加用户过滤条件 ----
+        # ---- 构建查询 ----
+        query = session.query(UserDailyStat).filter(
+            UserDailyStat.date >= date_start,
+            UserDailyStat.date <= date_end
+        )
+
         if user:
-            query_filter["user_id"] = user["_id"]
+            query = query.filter(UserDailyStat.user_id == user.id)
         else:
             # 如果没有找到用户记录，尝试用 user_id 作为 device_id 查询
-            query_filter["device_id"] = user_id
+            query = query.filter(UserDailyStat.device_id == user_id)
 
-        # ---- 执行查询 ----
-        records = list(daily_col.find(
-            query_filter,
-            sort=[("date", ASCENDING)]
-        ))
+        records = query.order_by(UserDailyStat.date.asc()).all()
 
         # ---- 计算汇总信息 ----
         daily_list = []
@@ -234,7 +245,7 @@ def get_user_stats(user_id: str):
         total_bad = 0
 
         for r in records:
-            doc = _serialize_doc(r)
+            doc = r.to_dict()
             daily_list.append({
                 "date": doc.get("date"),
                 "total_seated_minutes": doc.get("total_seated_minutes", 0),
@@ -242,6 +253,7 @@ def get_user_stats(user_id: str):
                 "good_posture_ratio": doc.get("good_posture_ratio", 0),
                 "health_score": doc.get("health_score", 0),
                 "score_breakdown": doc.get("score_breakdown", {}),
+                "sedentary_compliance": doc.get("sedentary_compliance", {}),
                 "hourly_distribution": doc.get("hourly_distribution", {})
             })
             total_score += doc.get("health_score", 0)
@@ -252,18 +264,19 @@ def get_user_stats(user_id: str):
         avg_score = round(total_score / num_days, 1) if num_days > 0 else 0
 
         result = {
-            "user_id": str(user["_id"]) if user else user_id,
-            "nickname": user.get("nickname", "未知用户") if user else "未知用户",
+            "user_id": str(user.id) if user else user_id,
+            "nickname": user.nickname if user else "未知用户",
             "query_days": num_days,
             "summary": {
                 "avg_health_score": avg_score,                # 平均健康评分
                 "total_seated_minutes": round(total_seated, 1),  # 总入座时长
                 "total_bad_posture_count": total_bad,         # 总不良坐姿次数
-                "total_accumulated_score": user.get("total_score", 0) if user else 0
+                "total_accumulated_score": user.total_score if user else 0
             },
             "daily_records": daily_list
         }
 
+        session.close()
         return _json_ok(result)
 
     except Exception as e:
@@ -271,7 +284,7 @@ def get_user_stats(user_id: str):
 
 
 # ============================================================
-# API 3: 获取排行榜数据
+# API 3: 获取排行榜数据（数据源：MySQL）
 # GET /api/miniapp/leaderboard
 # 支持查询参数: ?date=2026-04-27 (默认今天) / ?limit=10
 # ============================================================
@@ -280,16 +293,17 @@ def get_leaderboard():
     """
     获取健康坐姿排行榜
 
-    从 daily_stats 中按健康评分倒序排列，取出前 N 名。
-    通过 user_id 关联 users 集合获取昵称等信息。
+    从 MySQL user_daily_stats 中按健康评分倒序排列，取出前 N 名。
+    通过 user_id 关联 users 表获取昵称等信息。
 
     返回数据：
     - 排行榜列表（排名、昵称、评分、入座时长、不良坐姿次数）
     """
     try:
-        db = _get_db()
-        daily_col = db["daily_stats"]
-        users_col = db["users"]
+        from src.utils.mysql_db import User, UserDailyStat
+        from sqlalchemy import func
+
+        session = _get_mysql_session()
 
         # ---- 解析查询参数 ----
         query_date = request.args.get("date")
@@ -300,77 +314,53 @@ def get_leaderboard():
             today_str = datetime.now().strftime("%Y-%m-%d")
             yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
-            # 先尝试今天
-            count = daily_col.count_documents({"date": today_str})
+            count = session.query(func.count(UserDailyStat.id)).filter(
+                UserDailyStat.date == today_str
+            ).scalar()
             query_date = today_str if count > 0 else yesterday_str
 
-        # ---- 使用聚合管道进行排行榜查询 ----
-        pipeline = [
-            # 筛选指定日期的数据
-            {"$match": {"date": query_date}},
-            # 按健康评分倒序排列
-            {"$sort": {"health_score": -1}},
-            # 取前 N 名
-            {"$limit": limit},
-            # 关联 users 集合获取用户昵称和头像
-            {
-                "$lookup": {
-                    "from": "users",
-                    "localField": "user_id",
-                    "foreignField": "_id",
-                    "as": "user_info"
-                }
-            },
-            # 展开用户信息（可能为空）
-            {
-                "$unwind": {
-                    "path": "$user_info",
-                    "preserveNullAndEmptyArrays": True
-                }
-            },
-            # 投影需要返回的字段
-            {
-                "$project": {
-                    "_id": 0,
-                    "device_id": 1,
-                    "health_score": 1,
-                    "total_seated_minutes": 1,
-                    "bad_posture_count": 1,
-                    "good_posture_ratio": 1,
-                    "score_breakdown": 1,
-                    "nickname": {
-                        "$ifNull": ["$user_info.nickname", "$device_id"]
-                    },
-                    "avatar_url": {
-                        "$ifNull": ["$user_info.avatar_url", ""]
-                    }
-                }
-            }
-        ]
+        # ---- 查询排行榜数据（LEFT JOIN users 表） ----
+        from sqlalchemy import outerjoin
 
-        rankings = list(daily_col.aggregate(pipeline))
+        results = session.query(
+            UserDailyStat, User
+        ).outerjoin(
+            User, UserDailyStat.user_id == User.id
+        ).filter(
+            UserDailyStat.date == query_date
+        ).order_by(
+            UserDailyStat.health_score.desc()
+        ).limit(limit).all()
 
         # ---- 构建排行榜响应 ----
         leaderboard = []
-        for rank, entry in enumerate(rankings, 1):
+        for rank, (stat, user) in enumerate(results, 1):
             leaderboard.append({
-                "rank": rank,                                  # 排名
-                "nickname": entry.get("nickname", "匿名用户"),  # 昵称
-                "avatar_url": entry.get("avatar_url", ""),     # 头像
-                "device_id": entry.get("device_id", ""),       # 设备 ID
-                "health_score": entry.get("health_score", 0),  # 健康评分
-                "total_seated_minutes": entry.get("total_seated_minutes", 0),
-                "bad_posture_count": entry.get("bad_posture_count", 0),
-                "good_posture_ratio": entry.get("good_posture_ratio", 0),
-                "score_breakdown": entry.get("score_breakdown", {})
+                "rank": rank,
+                "nickname": user.nickname if user else stat.device_id,
+                "avatar_url": user.avatar_url if user else "",
+                "device_id": stat.device_id,
+                "health_score": stat.health_score,
+                "total_seated_minutes": stat.total_seated_minutes,
+                "bad_posture_count": stat.bad_posture_count,
+                "good_posture_ratio": stat.good_posture_ratio,
+                "score_breakdown": {
+                    "posture_score": stat.posture_score,
+                    "compliance_score": stat.compliance_score,
+                }
             })
+
+        total_participants = session.query(func.count(UserDailyStat.id)).filter(
+            UserDailyStat.date == query_date
+        ).scalar()
 
         result = {
             "date": query_date,
-            "total_participants": daily_col.count_documents({"date": query_date}),
+            "total_participants": total_participants,
             "leaderboard": leaderboard
         }
 
+        session.close()
         return _json_ok(result, f"{query_date} 排行榜数据")
 
     except Exception as e:
@@ -378,7 +368,7 @@ def get_leaderboard():
 
 
 # ============================================================
-# API 4: 用户注册/更新（辅助接口）
+# API 4: 用户注册/更新（数据源：MySQL）
 # POST /api/miniapp/user/register
 # ============================================================
 @miniapp_bp.post("/user/register")
@@ -398,51 +388,52 @@ def register_user():
     }
     """
     try:
-        db = _get_db()
-        users_col = db["users"]
+        from src.utils.mysql_db import User
+
+        session = _get_mysql_session()
 
         data = request.get_json(silent=True) or {}
         openid = data.get("openid", "").strip()
         if not openid:
             return _json_error("缺少 openid 参数")
 
-        # 构建用户文档
-        user_doc = {
-            "openid": openid,
-            "nickname": data.get("nickname", f"用户_{openid[-6:]}"),
-            "avatar_url": data.get("avatar_url", ""),
-            "device_id": data.get("device_id", ""),
-            "updated_at": datetime.utcnow()
-        }
+        # 查找是否已存在
+        user = session.query(User).filter(User.openid == openid).first()
 
-        # 使用 upsert：存在则更新，不存在则创建
-        result = users_col.update_one(
-            {"openid": openid},
-            {
-                "$set": user_doc,
-                "$setOnInsert": {
-                    "total_score": 0,
-                    "settings": {
-                        "sedentary_threshold_min": 45,
-                        "reminder_enabled": True,
-                        "visible_in_leaderboard": True
-                    },
-                    "created_at": datetime.utcnow()
-                }
-            },
-            upsert=True
-        )
+        if user:
+            # 更新已有用户
+            user.nickname = data.get("nickname", user.nickname)
+            user.avatar_url = data.get("avatar_url", user.avatar_url)
+            user.device_id = data.get("device_id", user.device_id)
+            user.updated_at = datetime.utcnow()
+        else:
+            # 创建新用户
+            user = User(
+                openid=openid,
+                nickname=data.get("nickname", f"用户_{openid[-6:]}"),
+                avatar_url=data.get("avatar_url", ""),
+                device_id=data.get("device_id", ""),
+                sedentary_threshold_min=45,
+                reminder_enabled=True,
+                visible_in_leaderboard=True,
+                total_score=0,
+            )
+            session.add(user)
 
-        # 获取完整的用户文档返回给小程序
-        user = users_col.find_one({"openid": openid})
-        return _json_ok(_serialize_doc(user), "注册/更新成功")
+        session.commit()
+
+        # 返回完整用户信息
+        user_dict = user.to_dict()
+        session.close()
+
+        return _json_ok(user_dict, "注册/更新成功")
 
     except Exception as e:
         return _json_error(f"用户注册失败: {str(e)}", 500)
 
 
 # ============================================================
-# API 5: 更新用户设置（辅助接口）
+# API 5: 更新用户设置（数据源：MySQL）
 # PUT /api/miniapp/user/<user_id>/settings
 # ============================================================
 @miniapp_bp.put("/user/<user_id>/settings")
@@ -458,41 +449,51 @@ def update_user_settings(user_id: str):
     }
     """
     try:
-        db = _get_db()
-        users_col = db["users"]
+        from src.utils.mysql_db import User
+
+        session = _get_mysql_session()
 
         data = request.get_json(silent=True) or {}
 
-        # 构建需要更新的 settings 字段
-        update_fields = {}
+        # ---- 查找用户 ----
+        user = None
+        try:
+            uid = int(user_id)
+            user = session.query(User).filter(User.id == uid).first()
+        except (ValueError, TypeError):
+            pass
+        if not user:
+            user = session.query(User).filter(User.openid == user_id).first()
+
+        if not user:
+            session.close()
+            return _json_error(f"未找到用户 {user_id}", 404)
+
+        # ---- 更新设置项 ----
+        updated = False
         if "sedentary_threshold_min" in data:
             threshold = int(data["sedentary_threshold_min"])
             threshold = max(10, min(120, threshold))  # 限制在10-120分钟
-            update_fields["settings.sedentary_threshold_min"] = threshold
+            user.sedentary_threshold_min = threshold
+            updated = True
         if "reminder_enabled" in data:
-            update_fields["settings.reminder_enabled"] = bool(data["reminder_enabled"])
+            user.reminder_enabled = bool(data["reminder_enabled"])
+            updated = True
         if "visible_in_leaderboard" in data:
-            update_fields["settings.visible_in_leaderboard"] = bool(data["visible_in_leaderboard"])
+            user.visible_in_leaderboard = bool(data["visible_in_leaderboard"])
+            updated = True
 
-        if not update_fields:
+        if not updated:
+            session.close()
             return _json_error("没有提供需要更新的设置项")
 
-        update_fields["updated_at"] = datetime.utcnow()
+        user.updated_at = datetime.utcnow()
+        session.commit()
 
-        # 尝试用 ObjectId 或 openid 查找用户
-        query = None
-        try:
-            query = {"_id": ObjectId(user_id)}
-        except Exception:
-            query = {"openid": user_id}
+        user_dict = user.to_dict()
+        session.close()
 
-        result = users_col.update_one(query, {"$set": update_fields})
-
-        if result.matched_count == 0:
-            return _json_error(f"未找到用户 {user_id}", 404)
-
-        user = users_col.find_one(query)
-        return _json_ok(_serialize_doc(user), "设置更新成功")
+        return _json_ok(user_dict, "设置更新成功")
 
     except Exception as e:
         return _json_error(f"更新设置失败: {str(e)}", 500)

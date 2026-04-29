@@ -107,7 +107,8 @@ Moon_Dance/
 |------|------|
 | `json_db.py` | **JSON 轻量存储与幂等管理** |
 | `excel_exporter.py` | **Excel 报表导出工具** |
-| `mongo_db.py` | **MongoDB 数据存储模块**（异步写入压力数据、数据查询接口） |
+| `mongo_db.py` | **MongoDB 数据存储模块**（专职：原始明细数据、实时传感器数据） |
+| `mysql_db.py` | **MySQL 数据存储模块（新增）**（专职：用户信息、设备绑定、久坐设置、排行榜统计） |
 
 ---
 
@@ -200,24 +201,28 @@ Moon_Dance/
 
 ---
 
-### `src/api/miniapp_routes.py` — 小程序 API 路由模块（新增）
+### `src/api/miniapp_routes.py` — 小程序 API 路由模块
 
 **类型**：Flask Blueprint（`/api/miniapp` 前缀）  
 **职责**：为微信小程序端提供实时坐姿状态查询、个人历史统计、多用户健康排行榜、用户注册与设置管理等接口。
 
+**双数据库数据源**：
+- 实时状态接口 → **MongoDB**（pressure_data 原始传感器数据）
+- 用户注册/设置、排行榜、历史统计 → **MySQL**（users, user_daily_stats 表）
+
 **API 接口列表**：
 
-| 接口 | 方法 | 说明 |
-|------|------|------|
-| `GET /api/miniapp/device/<device_id>/realtime` | 实时状态 | 返回最新坐姿状态、连续入座时长、设备在线状态 |
-| `GET /api/miniapp/user/<user_id>/stats` | 历史统计 | 按天数或日期范围查询每日汇总，返回含平均评分的聚合结果 |
-| `GET /api/miniapp/leaderboard` | 排行榜 | 按健康评分倒序取 TOP N，`$lookup` 关联用户昵称 |
-| `POST /api/miniapp/user/register` | 用户注册 | 小程序 openid 绑定设备，upsert 避免重复创建 |
-| `PUT /api/miniapp/user/<user_id>/settings` | 设置更新 | 修改久坐提醒阈值、排行榜可见性等 |
+| 接口 | 方法 | 数据源 | 说明 |
+|------|------|--------|------|
+| `GET /api/miniapp/device/<device_id>/realtime` | 实时状态 | MongoDB | 返回最新坐姿状态、连续入座时长、设备在线状态 |
+| `GET /api/miniapp/user/<user_id>/stats` | 历史统计 | MySQL | 按天数或日期范围查询每日汇总，返回含平均评分的聚合结果 |
+| `GET /api/miniapp/leaderboard` | 排行榜 | MySQL | 按健康评分倒序取 TOP N，JOIN users 表获取昵称 |
+| `POST /api/miniapp/user/register` | 用户注册 | MySQL | 小程序 openid 绑定设备，upsert 避免重复创建 |
+| `PUT /api/miniapp/user/<user_id>/settings` | 设置更新 | MySQL | 修改久坐提醒阈值、排行榜可见性等 |
 
 **关键实现**：
-- 排行榜使用 MongoDB 聚合管道（`$match` → `$sort` → `$limit` → `$lookup` → `$project`），一次查询完成排名和用户信息关联
-- 实时状态接口通过回溯最近 4 小时数据计算连续入座时长，相邻数据间隔 > 30 秒视为中断
+- 排行榜使用 SQLAlchemy LEFT JOIN（user_daily_stats JOIN users），一次查询完成排名和用户信息关联
+- 实时状态接口通过回溯 MongoDB 最近 4 小时数据计算连续入座时长，相邻数据间隔 > 30 秒视为中断
 - 所有响应使用统一 `{ok, message, data}` 格式
 
 ---
@@ -333,12 +338,13 @@ python scripts/auto_scaler.py
 ### `src/core/posture_analyzer.py` — 坐姿分析算法
 
 **类型**：纯算法模块  
-**职责**：核心业务算法——压力偏差计算、坐姿评级、模拟数据生成、全天评分计算。
+**职责**：核心业务算法——压力偏差计算、坐姿评级、模拟数据生成、健康评分计算。
 
 **关键函数**：
 - `calculate_ratio(f_left, f_right)`：计算左右受力偏差率 `|L-R| / (L+R)`
 - `get_assessment(ratio)`：按偏差率分级 → `"坐姿端正"(≤5%)` / `"轻微歪斜"(≤10%)` / `"请注意坐姿"(>10%)`
-- `calculate_daily_score(avg_deviation%)`：三段线性映射公式，将全天平均偏差率转换为 0~100 分评分，写入 Excel 报表顶部
+- `calculate_daily_score(avg_deviation%)`：（保留用于 Excel 报表）三段线性映射公式
+- `calculate_health_score(good_posture_ratio, sedentary_compliance_ratio)`：**新版综合健康评分算法**，坐姿质量(50分) + 久坐提醒合规(50分) = 0~100 分
 
 ---
 
@@ -527,42 +533,50 @@ src/core/worker.py (Celery 异步 Worker)
 data/realtime_logs/*.jsonl + MongoDB (pressure_simulator库) + data/realtime_logs/processed_ids.json
 ```
 
-### 小程序链路（每日汇总 + 排行榜）
+### 小程序链路（每日汇总 + 排行榜）— 双数据库架构
 
 ```
-MongoDB: raw_device_data（高频原始数据，由主链路实时写入）
+MongoDB: pressure_data（高频原始数据，由主链路实时写入）
     ▼
 scripts/daily_aggregation.py (每日凌晨 00:05 定时任务)
     │ 1. $match 筛选前一天数据
     │ 2. $group 按 device_id 聚合
-    │ 3. 计算: 总入座时长 + 不良坐姿次数 + 健康评分(0-100)
-    │ 4. upsert 写入结果
+    │ 3. 分析久坐提醒合规（离座≥5分钟）
+    │ 4. 计算新版健康评分: 坐姿质量(50分) + 久坐合规(50分)
+    │ 5. 双写: MongoDB daily_stats (兼容) + MySQL user_daily_stats
     ▼
-MongoDB: daily_stats（每日汇总统计）
+MySQL: users + user_daily_stats（用户关联数据）
     ▼
 src/api/miniapp_routes.py (小程序 API 蓝图)
-    ├─▶ GET /api/miniapp/device/<id>/realtime   → 实时坐姿状态
-    ├─▶ GET /api/miniapp/user/<id>/stats        → 个人历史统计
-    ├─▶ GET /api/miniapp/leaderboard            → 健康排行榜 TOP N
-    ├─▶ POST /api/miniapp/user/register         → 用户注册/绑定
-    └─▶ PUT /api/miniapp/user/<id>/settings     → 设置更新
+    ├─▶ GET  /device/<id>/realtime   → MongoDB 实时坐姿状态
+    ├─▶ GET  /user/<id>/stats        → MySQL 个人历史统计
+    ├─▶ GET  /leaderboard            → MySQL 健康排行榜 TOP N
+    ├─▶ POST /user/register          → MySQL 用户注册/绑定
+    └─▶ PUT  /user/<id>/settings     → MySQL 设置更新
 ```
 
-### MongoDB 集合关系
+### 双数据库职责划分
 
 ```
-┌──────────────────┐     ┌──────────────────────┐     ┌──────────────────┐
-│     users        │     │   raw_device_data    │     │   daily_stats    │
-│──────────────────│     │──────────────────────│     │──────────────────│
-│ _id (ObjectId)   │◄────│ user_id (可选)       │     │ user_id          │
-│ openid (唯一)    │     │ device_id            │────►│ device_id        │
-│ device_id        │────►│ timestamp (ms)       │     │ date (YYYY-MM-DD)│
-│ total_score      │     │ sensors {}           │     │ health_score     │
-│ settings {}      │     │ analysis {}          │     │ score_breakdown  │
-└──────────────────┘     │ is_seated            │     │ bad_posture_count│
-                         └──────────────────────┘     └──────────────────┘
-                              │ 定时聚合 │                    ▲
-                              └──────────┘────────────────────┘
+┌─────────── MongoDB ──────────────┐   ┌─────────── MySQL ──────────────────┐
+│                                  │   │                                    │
+│  pressure_data (原始明细数据)     │   │  users (用户信息表)                 │
+│  ├─ device_id                    │   │  ├─ id (主键)                      │
+│  ├─ timestamp (ms)               │   │  ├─ openid (唯一)                  │
+│  ├─ sensors {left_force_n, ...}  │   │  ├─ nickname / avatar_url          │
+│  ├─ analysis {deviation_ratio}   │   │  ├─ device_id (绑定设备)           │
+│  ├─ is_seated                    │   │  ├─ sedentary_threshold_min        │
+│  └─ 设备心跳/在线状态            │   │  ├─ reminder_enabled               │
+│                                  │   │  └─ visible_in_leaderboard         │
+│  daily_stats (兼容保留)           │   │                                    │
+│                                  │   │  user_daily_stats (每日统计汇总)    │
+│                                  │   │  ├─ user_id → users.id             │
+│                                  │   │  ├─ device_id + date (联合唯一)    │
+│                                  │   │  ├─ health_score (0-100)           │
+│                                  │   │  ├─ posture_score / compliance_score│
+│                                  │   │  ├─ sedentary_reminders_total      │
+│                                  │   │  └─ sedentary_reminders_complied   │
+└──────────────────────────────────┘   └────────────────────────────────────┘
 ```
 
 ### 扩展链路（Redis Stream MQ）
@@ -606,14 +620,15 @@ docs/
 | **服务器启动** | `main_api.py` | Flask App 创建、TLS 证书生成、蓝图注册（auth + api + miniapp）、请求日志 |
 | **鉴权层** | `src/api/auth.py` | JWT 签发验证（`/login`）、API Key 校验、`@token_required` / `@api_key_required` 装饰器 |
 | **数据接口层** | `src/api/routes.py` | `/api/v1/upload`（JWT）、`/api/v2/ingest`（API Key）、幂等去重、Celery 任务投递 |
-| **小程序接口层** | `src/api/miniapp_routes.py` | 实时状态、历史统计、排行榜、用户注册/设置（`/api/miniapp/*`） |
-| **每日汇总任务** | `scripts/daily_aggregation.py` | 凌晨定时聚合 `raw_device_data` → 计算健康评分 → 写入 `daily_stats` |
+| **小程序接口层** | `src/api/miniapp_routes.py` | 实时状态(MongoDB)、历史统计/排行榜/用户管理(MySQL)（`/api/miniapp/*`） |
+| **每日汇总任务** | `scripts/daily_aggregation.py` | 凌晨定时聚合 MongoDB 原始数据 → 新版健康评分(坐姿+合规) → 双写 MongoDB + MySQL |
 | **主异步链路** | `src/core/worker.py` | Celery + Redis 消费上传任务，异步写盘 |
 | **扩展MQ客户端** | `src/core/mq_client.py` | Redis Stream 消息发布、本地缓存、指数退避重传 |
 | **MQ消费节点** | `src/mq_workers/*` | validator→validated、writer→写文件、logger→统计 |
-| **配置中心** | `src/config/settings.py` | 所有配置常量、环境变量读取、路径计算 |
+| **配置中心** | `src/config/settings.py` | 所有配置常量、环境变量读取、路径计算（含 MYSQL_URI） |
 | **数据存储** | `src/utils/json_db.py` | JSONL 追加写日志、幂等 ID 管理、历史数据读写 |
-| **持久化DB引擎** | `src/utils/mongo_db.py` | 异步 MongoDB 压力数据实时直写，支持倒排与区间查询 |
+| **MongoDB引擎** | `src/utils/mongo_db.py` | 异步 MongoDB 压力数据实时直写（专职原始明细数据） |
+| **MySQL引擎** | `src/utils/mysql_db.py` | SQLAlchemy ORM，User + UserDailyStat 模型（专职用户关联数据） |
 | **设备模拟器** | `src/core/device_simulator.py` | 模拟传感器数据生成，双路上报（API + MQ） |
 | **客户端启动** | `main.py` | GUI 模式或无头模式，10 路并发模拟 |
 | **MQ节点管理** | `scripts/mq_manager.py` | 启停 validator/writer/logger，管理副本数 |

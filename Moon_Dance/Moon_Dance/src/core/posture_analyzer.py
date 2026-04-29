@@ -75,7 +75,7 @@ def generate_daily_data_for_device(device_id):
 
 def calculate_daily_score(average_deviation_percent):
     """
-    根据全天平均偏差率计算今日坐姿评分
+    根据全天平均偏差率计算今日坐姿评分（保留用于 Excel 报表）
     
     评分规则（线性映射）:
     - [0, 5]: 100 -> 90 分
@@ -113,3 +113,45 @@ def calculate_daily_score(average_deviation_percent):
         
     # 四舍五入取整 (使用 +0.5 确保 .5 向上取整)
     return int(score + 0.5)
+
+
+def calculate_health_score(good_posture_ratio, sedentary_compliance_ratio):
+    """
+    综合健康评分算法 (0-100 分)
+    
+    评分公式：
+    健康评分 = 坐姿质量得分(50分) + 久坐提醒合规得分(50分)
+    
+    维度1 - 坐姿质量得分 (满分 50 分):
+        基于实时坐姿评分的全天平均值。
+        良好坐姿占比越高，得分越高。
+        posture_score = good_posture_ratio * 50
+    
+    维度2 - 久坐提醒合规得分 (满分 50 分):
+        用户是否根据久坐提醒离开座位 ≥ 5 分钟。
+        合规次数占总提醒次数的比率越高，得分越高。
+        compliance_score = compliance_ratio * 50
+        若当天无久坐提醒触发（入座时长短），默认满分。
+    
+    :param good_posture_ratio: 良好坐姿数据占比 (0~1)
+    :param sedentary_compliance_ratio: 久坐提醒合规率 (0~1)，
+                                       即 (合规离座次数 / 总提醒次数)，
+                                       若无提醒则传 1.0
+    :return: (总分int, 各维度明细dict)
+    """
+    # ---- 维度1: 坐姿质量得分 (满分 50 分) ----
+    posture_score = round(good_posture_ratio * 50, 1)
+    
+    # ---- 维度2: 久坐提醒合规得分 (满分 50 分) ----
+    compliance_score = round(sedentary_compliance_ratio * 50, 1)
+    
+    # 总分
+    total = round(posture_score + compliance_score)
+    total = max(0, min(100, total))
+    
+    breakdown = {
+        "posture_score": posture_score,
+        "compliance_score": compliance_score
+    }
+    return total, breakdown
+

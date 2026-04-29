@@ -2,16 +2,21 @@
 # -*- coding: utf-8 -*-
 """
 每日数据汇总定时任务
-功能：每天凌晨从 pressure_data 中读取前一天的海量原始数据，
+功能：每天凌晨从 MongoDB pressure_data 中读取前一天的海量原始数据，
      按设备/用户聚合计算"总入座时长"、"不良坐姿次数"和"健康评分(0-100)"，
-     将汇总结果写入 daily_stats 集合。
+     将汇总结果写入 MySQL user_daily_stats 表（同时保留 MongoDB daily_stats 写入兼容）。
 使用方式：
      方式1: 直接运行本文件，APScheduler 将在每天 00:05 自动执行
      方式2: 命令行传参 --run-now 立即手动执行一次（用于测试/补跑）
+
+数据库职责划分：
+     MongoDB → 原始明细数据（pressure_data）
+     MySQL  → 用户关联数据、每日统计汇总（users, user_daily_stats）
 """
 
 import os
 import sys
+import json
 import argparse
 from datetime import datetime, timedelta
 
@@ -27,26 +32,19 @@ from pymongo import MongoClient, DESCENDING, ASCENDING
 from src.utils.mongo_db import MONGO_URI, DB_NAME
 
 # ============================================================
-# 健康评分算法参数（可按需调整）
+# 健康评分算法参数（新版：坐姿质量 50 分 + 久坐合规 50 分）
 # ============================================================
-# 久坐时长维度 (满分 40 分)
-MAX_DURATION_SCORE = 40
-IDEAL_SEATED_MINUTES = 480       # 理想每日入座时长上限 (8小时)
-OVER_SEATED_PENALTY_RATE = 0.05  # 每超出1分钟扣 0.05 分
-
-# 坐姿质量维度 (满分 40 分)
-MAX_POSTURE_SCORE = 40
-
-# 坐姿稳定性维度 (满分 20 分)
-MAX_CONSISTENCY_SCORE = 20
-BAD_POSTURE_FREE_QUOTA = 5       # 允许5次以内不扣分
-BAD_POSTURE_FULL_PENALTY = 50    # 超过50次稳定性得0分
-
 # 不良坐姿判定阈值
 BAD_POSTURE_RATIO_THRESHOLD = 0.10  # 偏差比率 > 10% 即判定为不良坐姿
 
 # 数据采样间隔推算（秒） —— 两条数据间隔 ≤ 此值视为"连续入座"
 SAMPLE_INTERVAL_SECONDS = 10
+
+# 久坐提醒默认阈值（分钟），与 MySQL 用户表中的设置对应
+DEFAULT_SEDENTARY_THRESHOLD_MIN = 45
+
+# 离座合规判定：离座时长 ≥ 此值（秒）才视为"合规离座"
+LEAVE_SEAT_COMPLIANCE_SECONDS = 300  # 5 分钟
 
 
 def get_db():
@@ -56,59 +54,82 @@ def get_db():
     return client[DB_NAME]
 
 
-def calculate_health_score(total_seated_minutes, bad_posture_count,
-                           good_posture_ratio):
+def get_mysql_session():
+    """获取 MySQL Session（懒加载导入，避免未安装时报错）"""
+    try:
+        from src.utils.mysql_db import get_session
+        return get_session()
+    except Exception as e:
+        print(f"  ⚠️  MySQL 连接失败，将仅写入 MongoDB: {e}")
+        return None
+
+
+def get_user_sedentary_threshold(device_id):
+    """从 MySQL 获取用户的久坐提醒阈值设置"""
+    try:
+        from src.utils.mysql_db import get_session, User
+        session = get_session()
+        user = session.query(User).filter(User.device_id == device_id).first()
+        threshold = user.sedentary_threshold_min if user else DEFAULT_SEDENTARY_THRESHOLD_MIN
+        session.close()
+        return threshold
+    except Exception:
+        return DEFAULT_SEDENTARY_THRESHOLD_MIN
+
+
+def analyze_sedentary_compliance(timestamps, sedentary_threshold_min):
     """
-    计算健康评分 (0-100 分)
+    分析久坐提醒合规情况
 
-    三个维度：
-    1. 久坐时长维度 (满分40)：入座越接近理想时长得分越高，过度久坐扣分
-    2. 坐姿质量维度 (满分40)：良好坐姿占比越高得分越高
-    3. 坐姿稳定性维度 (满分20)：不良坐姿次数越少得分越高
-
-    :param total_seated_minutes: 当日总入座时长（分钟）
-    :param bad_posture_count: 当日不良坐姿次数
-    :param good_posture_ratio: 当日良好坐姿数据占比 (0~1)
-    :return: (总分, 各维度明细字典)
+    逻辑：
+    1. 将时间戳序列按时间排序
+    2. 检测连续入座段（相邻数据间隔 ≤ SAMPLE_INTERVAL_SECONDS 秒）
+    3. 当连续入座时长达到 sedentary_threshold_min 分钟时，记录一次"应提醒"
+    4. 检查提醒后是否出现 ≥ 5 分钟的离座间隔（两条数据间隔 ≥ LEAVE_SEAT_COMPLIANCE_SECONDS）
+    
+    :param timestamps: 已排序的毫秒级时间戳列表
+    :param sedentary_threshold_min: 久坐提醒阈值（分钟）
+    :return: (总提醒次数, 合规离座次数)
     """
-    # ---- 维度1: 久坐时长得分 ----
-    if total_seated_minutes <= IDEAL_SEATED_MINUTES:
-        # 入座时长合理，不扣分
-        duration_score = MAX_DURATION_SCORE
-    else:
-        # 超时部分按比例扣分
-        over_minutes = total_seated_minutes - IDEAL_SEATED_MINUTES
-        penalty = over_minutes * OVER_SEATED_PENALTY_RATE
-        duration_score = max(0, MAX_DURATION_SCORE - penalty)
+    if not timestamps or len(timestamps) < 2:
+        return 0, 0
 
-    # ---- 维度2: 坐姿质量得分 ----
-    # 良好坐姿占比直接乘以满分
-    posture_score = good_posture_ratio * MAX_POSTURE_SCORE
+    threshold_ms = sedentary_threshold_min * 60 * 1000
+    gap_threshold_ms = SAMPLE_INTERVAL_SECONDS * 1000
 
-    # ---- 维度3: 坐姿稳定性得分 ----
-    if bad_posture_count <= BAD_POSTURE_FREE_QUOTA:
-        consistency_score = MAX_CONSISTENCY_SCORE
-    elif bad_posture_count >= BAD_POSTURE_FULL_PENALTY:
-        consistency_score = 0
-    else:
-        # 在 [5, 50] 区间内线性递减
-        ratio = (bad_posture_count - BAD_POSTURE_FREE_QUOTA) / \
-                (BAD_POSTURE_FULL_PENALTY - BAD_POSTURE_FREE_QUOTA)
-        consistency_score = MAX_CONSISTENCY_SCORE * (1 - ratio)
+    reminders_total = 0
+    reminders_complied = 0
 
-    # 所有维度取整组合
-    duration_score = round(duration_score, 1)
-    posture_score = round(posture_score, 1)
-    consistency_score = round(consistency_score, 1)
-    total = round(duration_score + posture_score + consistency_score)
-    total = max(0, min(100, total))  # 限制在 [0, 100]
+    session_start = timestamps[0]
+    last_ts = timestamps[0]
+    pending_reminder = False  # 是否有一个待验证的提醒
 
-    breakdown = {
-        "duration_score": duration_score,
-        "posture_score": posture_score,
-        "consistency_score": consistency_score
-    }
-    return total, breakdown
+    for i in range(1, len(timestamps)):
+        current_ts = timestamps[i]
+        gap = current_ts - last_ts
+
+        if gap > gap_threshold_ms:
+            # 出现间隔 → 离座
+            if pending_reminder:
+                # 检查离座时长是否 ≥ 5 分钟
+                if gap >= LEAVE_SEAT_COMPLIANCE_SECONDS * 1000:
+                    reminders_complied += 1
+                pending_reminder = False
+
+            # 开始新的入座段
+            session_start = current_ts
+        else:
+            # 连续入座中，检查是否达到久坐阈值
+            session_duration = current_ts - session_start
+            if session_duration >= threshold_ms and not pending_reminder:
+                reminders_total += 1
+                pending_reminder = True
+                # 重置入座起点，下一次达到阈值再触发
+                session_start = current_ts
+
+        last_ts = current_ts
+
+    return reminders_total, reminders_complied
 
 
 def aggregate_daily_data(db, target_date=None):
@@ -134,7 +155,6 @@ def aggregate_daily_data(db, target_date=None):
 
     raw_col = db["pressure_data"]
     daily_col = db["daily_stats"]
-    users_col = db["users"]
 
     # ---- 第一步：使用 MongoDB 聚合管道按设备分组统计 ----
     pipeline = [
@@ -190,6 +210,9 @@ def aggregate_daily_data(db, target_date=None):
 
     print(f"  📡 找到 {len(results)} 个设备的数据，开始逐一计算...\n")
 
+    # 获取 MySQL Session
+    mysql_session = get_mysql_session()
+
     count = 0
     for group in results:
         device_id = group["_id"]
@@ -198,7 +221,6 @@ def aggregate_daily_data(db, target_date=None):
         seated_records = group["seated_records"]
 
         # ---- 计算总入座时长 ----
-        # 按数据采样间隔推算：每条入座记录约代表 SAMPLE_INTERVAL_SECONDS 秒
         total_seated_minutes = round(
             (seated_records * SAMPLE_INTERVAL_SECONDS) / 60, 1
         )
@@ -207,25 +229,29 @@ def aggregate_daily_data(db, target_date=None):
         good_count = total_records - bad_count
         good_ratio = good_count / total_records if total_records > 0 else 1.0
 
-        # ---- 计算健康评分 ----
+        # ---- 分析久坐提醒合规情况 ----
+        sorted_timestamps = sorted(group.get("timestamps", []))
+        sedentary_threshold = get_user_sedentary_threshold(device_id)
+        reminders_total, reminders_complied = analyze_sedentary_compliance(
+            sorted_timestamps, sedentary_threshold
+        )
+        # 合规率：无提醒时默认 1.0（满分）
+        compliance_ratio = (reminders_complied / reminders_total) if reminders_total > 0 else 1.0
+
+        # ---- 计算新版健康评分 ----
+        from src.core.posture_analyzer import calculate_health_score
         health_score, score_breakdown = calculate_health_score(
-            total_seated_minutes, bad_count, good_ratio
+            good_ratio, compliance_ratio
         )
 
         # ---- 构建小时分布统计（用于热力图） ----
         hourly_dist = {}
         for h in group.get("hours", []):
-            # 补齐为两位数
             h_padded = h.zfill(2)
             hourly_dist[h_padded] = hourly_dist.get(h_padded, 0) + 1
 
-        # ---- 查找设备关联的用户 ----
-        user = users_col.find_one({"device_id": device_id})
-        user_id = user["_id"] if user else None
-
-        # ---- 构造每日汇总文档 ----
+        # ---- 写入 MongoDB daily_stats（兼容保留） ----
         daily_doc = {
-            "user_id": user_id,
             "device_id": device_id,
             "date": date_str,
             "total_seated_minutes": total_seated_minutes,
@@ -233,26 +259,85 @@ def aggregate_daily_data(db, target_date=None):
             "good_posture_ratio": round(good_ratio, 4),
             "health_score": health_score,
             "score_breakdown": score_breakdown,
+            "sedentary_compliance": {
+                "reminders_total": reminders_total,
+                "reminders_complied": reminders_complied,
+            },
             "hourly_distribution": hourly_dist,
             "total_raw_records": total_records,
             "created_at": datetime.utcnow()
         }
 
-        # ---- 使用 upsert 写入，避免重复执行产生重复数据 ----
         filter_key = {"device_id": device_id, "date": date_str}
         daily_col.update_one(filter_key, {"$set": daily_doc}, upsert=True)
 
-        # ---- 同步更新用户累计总积分 ----
-        if user_id:
-            users_col.update_one(
-                {"_id": user_id},
-                {"$inc": {"total_score": health_score}}
-            )
+        # ---- 写入 MySQL user_daily_stats ----
+        if mysql_session:
+            try:
+                from src.utils.mysql_db import UserDailyStat, User
+
+                # 查找关联用户
+                user = mysql_session.query(User).filter(
+                    User.device_id == device_id
+                ).first()
+                user_id = user.id if user else None
+
+                # upsert: 查找已有记录或创建新记录
+                existing = mysql_session.query(UserDailyStat).filter(
+                    UserDailyStat.device_id == device_id,
+                    UserDailyStat.date == date_str
+                ).first()
+
+                if existing:
+                    existing.user_id = user_id
+                    existing.total_seated_minutes = total_seated_minutes
+                    existing.bad_posture_count = bad_count
+                    existing.good_posture_ratio = round(good_ratio, 4)
+                    existing.health_score = health_score
+                    existing.duration_score = 0  # 新算法不再使用此维度
+                    existing.posture_score = score_breakdown["posture_score"]
+                    existing.compliance_score = score_breakdown["compliance_score"]
+                    existing.sedentary_reminders_total = reminders_total
+                    existing.sedentary_reminders_complied = reminders_complied
+                    existing.hourly_distribution = json.dumps(hourly_dist)
+                    existing.total_raw_records = total_records
+                else:
+                    new_stat = UserDailyStat(
+                        user_id=user_id,
+                        device_id=device_id,
+                        date=date_str,
+                        total_seated_minutes=total_seated_minutes,
+                        bad_posture_count=bad_count,
+                        good_posture_ratio=round(good_ratio, 4),
+                        health_score=health_score,
+                        duration_score=0,
+                        posture_score=score_breakdown["posture_score"],
+                        compliance_score=score_breakdown["compliance_score"],
+                        sedentary_reminders_total=reminders_total,
+                        sedentary_reminders_complied=reminders_complied,
+                        hourly_distribution=json.dumps(hourly_dist),
+                        total_raw_records=total_records,
+                    )
+                    mysql_session.add(new_stat)
+
+                # 更新用户累计总积分
+                if user:
+                    user.total_score = (user.total_score or 0) + health_score
+
+                mysql_session.commit()
+            except Exception as e:
+                mysql_session.rollback()
+                print(f"  ⚠️  [{device_id}] MySQL 写入失败: {e}")
 
         count += 1
+        compliance_info = f"提醒{reminders_total}次/合规{reminders_complied}次"
         print(f"  ✅ [{device_id}] 入座 {total_seated_minutes} 分钟 | "
               f"不良姿势 {bad_count} 次 | "
+              f"{compliance_info} | "
               f"健康评分 {health_score} 分")
+
+    if mysql_session:
+        mysql_session.close()
 
     print(f"\n  🎉 汇总完成！共处理 {count} 个设备的数据。")
     return count
@@ -260,30 +345,28 @@ def aggregate_daily_data(db, target_date=None):
 
 def ensure_indexes(db):
     """确保必要的索引存在（首次运行时自动创建）"""
-    print("  🔧 检查并创建索引...")
+    print("  🔧 检查并创建 MongoDB 索引...")
 
     # pressure_data 索引
     raw_col = db["pressure_data"]
-    raw_col.create_index([("device_id", ASCENDING), ("timestamp", ASCENDING)],
+    raw_col.create_index([(ASCENDING, ASCENDING), ("timestamp", ASCENDING)],
                          name="idx_device_timestamp")
 
-    # daily_stats 索引
+    # daily_stats 索引（兼容保留）
     daily_col = db["daily_stats"]
     daily_col.create_index([("date", ASCENDING), ("health_score", DESCENDING)],
                            name="idx_date_score")
-    daily_col.create_index([("user_id", ASCENDING), ("date", DESCENDING)],
-                           name="idx_user_date")
     daily_col.create_index([("device_id", ASCENDING), ("date", ASCENDING)],
                            unique=True, name="idx_device_date_unique")
 
-    # users 索引
-    users_col = db["users"]
-    users_col.create_index([("openid", ASCENDING)], unique=True,
-                           name="idx_openid_unique", sparse=True)
-    users_col.create_index([("device_id", ASCENDING)],
-                           name="idx_device")
+    print("  ✅ MongoDB 索引创建/验证完成。")
 
-    print("  ✅ 索引创建/验证完成。")
+    # MySQL 表初始化
+    try:
+        from src.utils.mysql_db import init_db
+        init_db()
+    except Exception as e:
+        print(f"  ⚠️  MySQL 表初始化失败（不影响 MongoDB 写入）: {e}")
 
 
 def run_daily_job():
