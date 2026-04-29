@@ -1,4 +1,4 @@
-﻿=======================================================
+=======================================================
 Moon_Dance 数据服务系统 - 项目演示命令指南
 =======================================================
 
@@ -375,28 +375,26 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose down && docker compose
 #
 
 # ----------------------------------------------------------
-# 服务器端命令（SSH 登录后在 Linux/bash 中执行）
+# 服务器端：MySQL 与 MongoDB 双数据库验证
 # ----------------------------------------------------------
 # 前提 1：先登录服务器，进入项目目录
 # ssh ubuntu@124.220.79.133
 # cd ~/desk2/Moon_Dance/Moon_Dance
 
-# 前提 2：如果是第一次执行验证脚本，需要补充服务器运行环境（防止报错No module named pymongo）
-sudo apt update -y && pip3 install pymongo apscheduler --break-system-packages || true
+# 前提 2：如果是第一次执行验证脚本，需要补充服务器运行环境
+sudo apt update -y && pip3 install pymongo apscheduler pymysql sqlalchemy --break-system-packages || true
 
-# 1) 运行 MongoDB 连接测试（验证数据链路通畅）
+# 1) 验证 MySQL 连接与关系型数据存储（用户信息、排行榜）
+cd ~/desk2/Moon_Dance/Moon_Dance && python3 test_mysql.py
+
+# 2) 验证 MongoDB 连接（验证高频明细数据链路通畅）
 cd ~/desk2/Moon_Dance/Moon_Dance && python3 test_mongo.py
 
-# 2) 一键查看 MongoDB 全部信息（数据量 + 最新数据 + 汇总 + 排行榜）
+# 3) 一键查看 MongoDB 全部信息（压力明细数据 + 兼容统计）
 cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/mongo_check.py
 
-# 3) 也可以分开看：
-python3 scripts/mongo_check.py --count     # 只看各集合数据量
-python3 scripts/mongo_check.py --latest    # 只看最新原始数据
-python3 scripts/mongo_check.py --stats     # 只看每日汇总结果
-python3 scripts/mongo_check.py --rank      # 只看排行榜 TOP 10
-
-# 4) 手动执行每日数据汇总（立即聚合昨天的数据，生成健康评分）
+# 4) 手动执行每日数据汇总（双写聚合：MongoDB 明细 -> MySQL + MongoDB 统计）
+# 注意：该脚本会自动根据最新的"坐姿质量+久坐合规"双因素算法生成 0-100 分健康评分
 cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --run-now
 
 # 5) 手动补跑指定日期的汇总（把日期替换成你压测当天的日期）
@@ -408,7 +406,9 @@ cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --daemo
 
 # ----------------------------------------------------------
 # 服务器端：小程序 API 接口验证（通过已运行的 Docker 集群测试）
-# 为了让老师看得更清楚，以下命令自带了完美的 JSON 高亮和中文排版
+# 讲解词："因为我们升级了双数据库架构，现在小程序的接口职责划分非常清晰。
+# 实时姿态查询依然走查询最快的 MongoDB，而用户注册、历史统计、排行榜等
+# 强关联关系数据则全部由后端的 MySQL 承载。这是实际的接口调用效果："
 # ----------------------------------------------------------
 
 # 注册一个测试用户并绑定设备
