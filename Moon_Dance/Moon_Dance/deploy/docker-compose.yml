@@ -74,6 +74,8 @@ services:
     volumes:
       - api_data:/app/data
       - ../certs:/app/certs:ro
+    ports:
+      - "8000:8000"
     expose:
       - "8000"
     depends_on:

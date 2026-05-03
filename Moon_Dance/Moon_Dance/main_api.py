@@ -146,6 +146,21 @@ def create_app() -> Flask:
     def health():
         return jsonify({"ok": True}), 200
 
+    @app.get("/")
+    def index():
+        return (
+            jsonify(
+                {
+                    "ok": True,
+                    "service": "MoonDance API",
+                    "health": "/health",
+                    "ingest_v2": "/api/v2/ingest",
+                    "upload_v1": "/api/v1/upload",
+                }
+            ),
+            200,
+        )
+
     return app
 
 
