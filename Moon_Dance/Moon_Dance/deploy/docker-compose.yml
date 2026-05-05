@@ -32,6 +32,26 @@ services:
     networks:
       - moondance-net
 
+  # MySQL 数据库服务（小程序用户/统计数据）
+  mysql:
+    image: mysql:8.0
+    restart: always
+    command: --default-authentication-plugin=mysql_native_password
+    environment:
+      - MYSQL_ROOT_PASSWORD=MySql@2026Ab
+      - MYSQL_DATABASE=moondance
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-pMySql@2026Ab"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    networks:
+      - moondance-net
+
   # Nginx 负载均衡
   nginx:
     image: nginx:alpine
@@ -72,6 +92,7 @@ services:
       - API_CERT_CN=localhost
       - API_KEY=myh
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
+      - MYSQL_URI=mysql+pymysql://root:MySql%402026Ab@mysql:3306/moondance?charset=utf8mb4
     volumes:
       - api_data:/app/data
       - ../certs:/app/certs:ro
@@ -79,6 +100,7 @@ services:
       - "8000"
     depends_on:
       - redis
+      - mysql
     networks:
       - moondance-net
 
@@ -92,10 +114,12 @@ services:
     environment:
       - REDIS_URL=redis://redis:6379/0
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
+      - MYSQL_URI=mysql+pymysql://root:MySql%402026Ab@mysql:3306/moondance?charset=utf8mb4
     volumes:
       - api_data:/app/data
     depends_on:
       - redis
+      - mysql
     networks:
       - moondance-net
 
@@ -103,6 +127,7 @@ volumes:
   redis_data:
   api_data:
   mongo_data:
+  mysql_data:
 
 networks:
   moondance-net:
