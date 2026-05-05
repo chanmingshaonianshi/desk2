@@ -9,6 +9,8 @@ MySQL 数据存储模块
 """
 
 import os
+import threading
+import time
 from datetime import datetime
 
 from sqlalchemy import (
@@ -33,11 +35,39 @@ engine = create_engine(
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 Base = declarative_base()
+_init_lock = threading.Lock()
+_init_done = False
 
 
 def get_session() -> Session:
     """获取一个新的数据库 Session（使用完毕后需调用 .close()）"""
+    ensure_initialized()
     return SessionLocal()
+
+
+def ensure_initialized(max_retries: int = 10, retry_interval: float = 2.0) -> None:
+    """确保 MySQL 可连接且数据表已创建。"""
+    global _init_done
+    if _init_done:
+        return
+
+    with _init_lock:
+        if _init_done:
+            return
+
+        last_error = None
+        for _ in range(max_retries):
+            try:
+                Base.metadata.create_all(bind=engine)
+                _init_done = True
+                print("[MySQL] ✅ 数据库表初始化完成（users, user_daily_stats）")
+                return
+            except Exception as exc:
+                last_error = exc
+                time.sleep(retry_interval)
+
+        print(f"[MySQL] ❌ 数据库表初始化失败: {last_error}")
+        raise last_error
 
 
 # ============================================================
@@ -170,12 +200,7 @@ def init_db():
     初始化数据库：自动创建所有表（如果不存在）
     在服务启动时调用一次即可
     """
-    try:
-        Base.metadata.create_all(bind=engine)
-        print("[MySQL] ✅ 数据库表初始化完成（users, user_daily_stats）")
-    except Exception as e:
-        print(f"[MySQL] ❌ 数据库表初始化失败: {e}")
-        raise
+    ensure_initialized()
 
 
 def check_connection():
