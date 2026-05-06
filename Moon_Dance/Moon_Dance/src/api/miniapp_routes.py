@@ -79,6 +79,31 @@ def _serialize_doc(doc: dict) -> dict:
     return result
 
 
+def _parse_date_arg(value: str | None, field_name: str) -> str | None:
+    """校验 YYYY-MM-DD 日期参数格式。"""
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"{field_name} 参数格式错误，应为 YYYY-MM-DD") from exc
+
+
+def _parse_bool_arg(value: Any, field_name: str) -> bool:
+    """解析布尔参数，拒绝模糊值。"""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in {"true", "1", "yes", "on"}:
+            return True
+        if text in {"false", "0", "no", "off"}:
+            return False
+    raise ValueError(f"{field_name} 参数必须为布尔值")
+
+
 # ============================================================
 # API 1: 获取设备实时状态（数据源：MongoDB）
 # GET /api/miniapp/device/<device_id>/realtime
@@ -193,6 +218,7 @@ def get_user_stats(user_id: str):
     - 每日统计列表（日期、入座时长、不良坐姿次数、健康评分）
     - 汇总信息（周期内平均评分、总入座时长等）
     """
+    session = None
     try:
         from src.utils.mysql_db import User, UserDailyStat
 
@@ -212,10 +238,15 @@ def get_user_stats(user_id: str):
 
         # ---- 解析查询参数 ----
         days = request.args.get("days", type=int, default=7)
-        start_date = request.args.get("start")
-        end_date = request.args.get("end")
+        if days <= 0 or days > 365:
+            return _json_error("days 参数范围必须在 1-365 之间")
+
+        start_date = _parse_date_arg(request.args.get("start"), "start")
+        end_date = _parse_date_arg(request.args.get("end"), "end")
 
         if start_date and end_date:
+            if start_date > end_date:
+                return _json_error("start 不能晚于 end")
             date_start = start_date
             date_end = end_date
         else:
@@ -276,11 +307,13 @@ def get_user_stats(user_id: str):
             "daily_records": daily_list
         }
 
-        session.close()
         return _json_ok(result)
 
     except Exception as e:
         return _json_error(f"查询历史统计失败: {str(e)}", 500)
+    finally:
+        if session:
+            session.close()
 
 
 # ============================================================
@@ -299,6 +332,7 @@ def get_leaderboard():
     返回数据：
     - 排行榜列表（排名、昵称、评分、入座时长、不良坐姿次数）
     """
+    session = None
     try:
         from src.utils.mysql_db import User, UserDailyStat
         from sqlalchemy import func
@@ -306,8 +340,10 @@ def get_leaderboard():
         session = _get_mysql_session()
 
         # ---- 解析查询参数 ----
-        query_date = request.args.get("date")
+        query_date = _parse_date_arg(request.args.get("date"), "date")
         limit = request.args.get("limit", type=int, default=10)
+        if limit <= 0 or limit > 100:
+            return _json_error("limit 参数范围必须在 1-100 之间")
 
         # 默认查询今天的排行榜；如果今天还没有数据，自动回退到昨天
         if not query_date:
@@ -360,11 +396,13 @@ def get_leaderboard():
             "leaderboard": leaderboard
         }
 
-        session.close()
         return _json_ok(result, f"{query_date} 排行榜数据")
 
     except Exception as e:
         return _json_error(f"查询排行榜失败: {str(e)}", 500)
+    finally:
+        if session:
+            session.close()
 
 
 # ============================================================
@@ -387,6 +425,7 @@ def register_user():
         "device_id": "device_001"
     }
     """
+    session = None
     try:
         from src.utils.mysql_db import User
 
@@ -395,7 +434,7 @@ def register_user():
         data = request.get_json(silent=True) or {}
         openid = data.get("openid", "").strip()
         if not openid:
-            return _json_error("缺少 openid 参数")
+            return _json_error("缺少 openid 参数，不要直接传微信 login code")
 
         # 查找是否已存在
         user = session.query(User).filter(User.openid == openid).first()
@@ -424,12 +463,13 @@ def register_user():
 
         # 返回完整用户信息
         user_dict = user.to_dict()
-        session.close()
-
         return _json_ok(user_dict, "注册/更新成功")
 
     except Exception as e:
         return _json_error(f"用户注册失败: {str(e)}", 500)
+    finally:
+        if session:
+            session.close()
 
 
 # ============================================================
@@ -448,6 +488,7 @@ def update_user_settings(user_id: str):
         "visible_in_leaderboard": false
     }
     """
+    session = None
     try:
         from src.utils.mysql_db import User
 
@@ -473,14 +514,15 @@ def update_user_settings(user_id: str):
         updated = False
         if "sedentary_threshold_min" in data:
             threshold = int(data["sedentary_threshold_min"])
-            threshold = max(10, min(120, threshold))  # 限制在10-120分钟
+            if threshold < 10 or threshold > 120:
+                return _json_error("sedentary_threshold_min 必须在 10-120 分钟之间")
             user.sedentary_threshold_min = threshold
             updated = True
         if "reminder_enabled" in data:
-            user.reminder_enabled = bool(data["reminder_enabled"])
+            user.reminder_enabled = _parse_bool_arg(data["reminder_enabled"], "reminder_enabled")
             updated = True
         if "visible_in_leaderboard" in data:
-            user.visible_in_leaderboard = bool(data["visible_in_leaderboard"])
+            user.visible_in_leaderboard = _parse_bool_arg(data["visible_in_leaderboard"], "visible_in_leaderboard")
             updated = True
 
         if not updated:
@@ -491,9 +533,10 @@ def update_user_settings(user_id: str):
         session.commit()
 
         user_dict = user.to_dict()
-        session.close()
-
         return _json_ok(user_dict, "设置更新成功")
 
     except Exception as e:
         return _json_error(f"更新设置失败: {str(e)}", 500)
+    finally:
+        if session:
+            session.close()

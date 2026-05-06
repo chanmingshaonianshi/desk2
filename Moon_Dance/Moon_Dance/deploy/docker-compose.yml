@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # Redis 消息队列服务
   redis:
@@ -99,8 +97,10 @@ services:
     expose:
       - "8000"
     depends_on:
-      - redis
-      - mysql
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     networks:
       - moondance-net
 
@@ -118,8 +118,10 @@ services:
     volumes:
       - api_data:/app/data
     depends_on:
-      - redis
-      - mysql
+      redis:
+        condition: service_healthy
+      mysql:
+        condition: service_healthy
     networks:
       - moondance-net
 
