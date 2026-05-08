@@ -4,6 +4,7 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
 前端同学请参照此文档进行小程序端开发对接。
 后端基础地址（本地开发）: http://localhost:5000
 后端基础地址（云端部署）: https://www.myhjmycjh.tech
+统一 API Key: myh
 
 所有接口统一响应格式：
 {
@@ -13,7 +14,48 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
 }
 
 ===============================================================
-一、数据库架构说明（双数据库）
+一、鉴权机制说明（必须先看）
+===============================================================
+
+小程序接口现已升级为“双重鉴权”：
+  1. X-API-Key: myh
+  2. Authorization: Bearer <token>
+
+鉴权规则：
+  - 注册接口 `POST /api/miniapp/user/register`
+    只要求请求头带 `X-API-Key: myh`
+  - 登录接口 `POST /api/miniapp/user/login`
+    只要求请求头带 `X-API-Key: myh`
+  - 以下接口必须同时带上两种请求头：
+    · GET /api/miniapp/device/<device_id>/realtime
+    · GET /api/miniapp/user/<user_id>/stats
+    · GET /api/miniapp/leaderboard
+    · PUT /api/miniapp/user/<user_id>/settings
+
+标准请求头：
+  Content-Type: application/json
+  X-API-Key: myh
+  Authorization: Bearer <登录接口返回的 token>
+
+推荐调用顺序：
+  步骤1：先准备 openid（注意：不要直接把 wx.login 返回的 code 当 openid 传给后端）
+  步骤2：首次注册时调用 `/api/miniapp/user/register`，并设置 password
+  步骤3：调用 `/api/miniapp/user/login` 获取 Bearer Token
+  步骤4：后续业务接口统一携带 `X-API-Key + Authorization`
+
+登录成功后返回：
+  - token: JWT 字符串
+  - token_type: 固定为 Bearer
+  - user: 当前用户信息
+
+权限规则：
+  - `/api/miniapp/user/<user_id>/stats`
+  - `/api/miniapp/user/<user_id>/settings`
+  以上两个接口只允许访问当前登录用户自己的数据。
+  也就是说，Token 里的用户身份必须和 URL 中的 user_id / openid 对应，否则返回 403。
+
+===============================================================
+二、数据库架构说明（双数据库）
 ===============================================================
 
 MongoDB（原始传感器明细数据）
@@ -29,7 +71,7 @@ MySQL（用户数据 & 关联关系）
   - user_daily_stats 表：每日健康评分、入座时长、不良坐姿次数等
 
 ===============================================================
-二、健康评分算法说明
+三、健康评分算法说明
 ===============================================================
 
 健康评分 = 坐姿质量得分(满分50) + 久坐提醒合规得分(满分50)
@@ -47,7 +89,7 @@ MySQL（用户数据 & 关联关系）
 最终输出: 0~100 的整数健康评分
 
 ===============================================================
-三、API 接口详情
+四、API 接口详情
 ===============================================================
 
 ---------------------------------------------------------------
@@ -55,9 +97,12 @@ MySQL（用户数据 & 关联关系）
 ---------------------------------------------------------------
 路径:   GET /api/miniapp/device/<device_id>/realtime
 数据源: MongoDB
-鉴权:   无需鉴权
+鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
 
 请求示例:
+  Header:
+    X-API-Key: myh
+    Authorization: Bearer <token>
   GET /api/miniapp/device/device_001/realtime
 
 成功响应 (200):
@@ -98,7 +143,7 @@ MySQL（用户数据 & 关联关系）
 ---------------------------------------------------------------
 路径:   GET /api/miniapp/user/<user_id>/stats
 数据源: MySQL
-鉴权:   无需鉴权
+鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
 
 查询参数:
   days  (int, 默认7)        — 查询最近N天
@@ -109,6 +154,9 @@ MySQL（用户数据 & 关联关系）
 user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
 
 请求示例:
+  Header:
+    X-API-Key: myh
+    Authorization: Bearer <token>
   GET /api/miniapp/user/wx_test_user_001/stats?days=7
   GET /api/miniapp/user/1/stats?start=2026-04-20&end=2026-04-27
 
@@ -161,13 +209,16 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
 ---------------------------------------------------------------
 路径:   GET /api/miniapp/leaderboard
 数据源: MySQL
-鉴权:   无需鉴权
+鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
 
 查询参数:
   date  (string, 可选)  — 指定日期 YYYY-MM-DD（默认今天，无数据回退昨天）
   limit (int, 默认10)   — 返回前N名
 
 请求示例:
+  Header:
+    X-API-Key: myh
+    Authorization: Bearer <token>
   GET /api/miniapp/leaderboard
   GET /api/miniapp/leaderboard?date=2026-04-27&limit=20
 
@@ -208,11 +259,12 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
 ---------------------------------------------------------------
 路径:   POST /api/miniapp/user/register
 数据源: MySQL
-鉴权:   无需鉴权
+鉴权:   需要 `X-API-Key: myh`
 
 请求体 (JSON):
 {
     "openid": "wx_user_xxx",           // 必填，微信 openid
+    "password": "123456",              // 必填（首次注册必须传；已存在用户可用于重置密码）
     "nickname": "用户昵称",             // 可选，默认"用户_xxx"
     "avatar_url": "https://...",       // 可选
     "device_id": "device_001"          // 可选，绑定的设备ID
@@ -240,18 +292,75 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
 }
 
 前端对接要点:
-  - 小程序首次启动时调用 wx.login() 获取 openid 后调用此接口
+  - 小程序首次启动时，先拿到真正的 openid，再调用此接口
+  - 不要把 wx.login 返回的 code 直接传给本接口
+  - 首次注册必须提供 password
   - 已存在的 openid 会执行更新操作（幂等）
+  - 如果需要给已有用户重置密码，可以再次调用本接口并传新的 password
   - 返回的 id 即为后续接口中的 user_id
+
+---------------------------------------------------------------
+接口4-1: 用户登录
+---------------------------------------------------------------
+路径:   POST /api/miniapp/user/login
+数据源: MySQL
+鉴权:   需要 `X-API-Key: myh`
+
+请求体 (JSON):
+{
+    "openid": "wx_user_xxx",
+    "password": "123456"
+}
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "登录成功",
+    "data": {
+        "token": "<JWT_TOKEN>",
+        "token_type": "Bearer",
+        "user": {
+            "id": 1,
+            "openid": "wx_user_xxx",
+            "nickname": "用户昵称",
+            "avatar_url": "",
+            "device_id": "device_001",
+            "settings": {
+                "sedentary_threshold_min": 45,
+                "reminder_enabled": true,
+                "visible_in_leaderboard": true
+            },
+            "total_score": 0,
+            "created_at": "2026-04-27T12:00:00",
+            "updated_at": "2026-04-27T12:00:00"
+        }
+    }
+}
+
+错误响应示例:
+{
+    "ok": false,
+    "message": "密码错误",
+    "data": null
+}
+
+前端对接要点:
+  - 登录成功后，将返回的 token 本地保存
+  - 后续调用受保护接口时，统一带上 `Authorization: Bearer <token>`
+  - 若收到 401，可重新登录获取新 token
 
 ---------------------------------------------------------------
 接口5: 更新用户设置
 ---------------------------------------------------------------
 路径:   PUT /api/miniapp/user/<user_id>/settings
 数据源: MySQL
-鉴权:   无需鉴权
+鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
 
 user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
+
+请求头:
+  X-API-Key: myh
+  Authorization: Bearer <token>
 
 请求体 (JSON，所有字段可选，传哪个改哪个):
 {
@@ -285,16 +394,51 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
   - 只需传递要修改的设置项，未传的保持不变
   - sedentary_threshold_min 后端限制 10~120 分钟
   - visible_in_leaderboard=false 时用户不出现在排行榜中
+  - 当前用户只能修改自己的设置，不能改别人的设置
 
 ===============================================================
-四、已删除/暂不开发的功能
+五、前端接入示例
+===============================================================
+
+1. 注册
+POST /api/miniapp/user/register
+Header:
+  Content-Type: application/json
+  X-API-Key: myh
+Body:
+{
+  "openid": "wx_user_xxx",
+  "password": "123456",
+  "nickname": "小明",
+  "device_id": "device_001"
+}
+
+2. 登录
+POST /api/miniapp/user/login
+Header:
+  Content-Type: application/json
+  X-API-Key: myh
+Body:
+{
+  "openid": "wx_user_xxx",
+  "password": "123456"
+}
+
+3. 带双重鉴权访问业务接口
+GET /api/miniapp/user/1/stats?days=7
+Header:
+  X-API-Key: myh
+  Authorization: Bearer <登录返回的 token>
+
+===============================================================
+六、已删除/暂不开发的功能
 ===============================================================
 
 以下功能已明确移除，前端无需对接：
   ✗ 社交分享模块（日报/周报卡片生成、分享到微信朋友圈）
 
 ===============================================================
-五、前端开发建议
+七、前端开发建议
 ===============================================================
 
 1. 页面结构建议：

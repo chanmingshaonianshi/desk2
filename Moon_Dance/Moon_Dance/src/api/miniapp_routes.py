@@ -18,10 +18,12 @@ import time
 from datetime import datetime, timedelta
 from typing import Any, Tuple
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, g
 from pymongo import MongoClient, DESCENDING, ASCENDING
 from bson import ObjectId
+from werkzeug.security import check_password_hash, generate_password_hash
 
+from src.api.auth import api_key_required, issue_miniapp_token, miniapp_dual_auth_required
 from src.utils.mongo_db import MONGO_URI, DB_NAME
 
 # ============================================================
@@ -104,11 +106,36 @@ def _parse_bool_arg(value: Any, field_name: str) -> bool:
     raise ValueError(f"{field_name} 参数必须为布尔值")
 
 
+def _resolve_user(session, user_id: str):
+    from src.utils.mysql_db import User
+
+    user = None
+    try:
+        uid = int(user_id)
+        user = session.query(User).filter(User.id == uid).first()
+    except (ValueError, TypeError):
+        pass
+    if not user:
+        user = session.query(User).filter(User.openid == user_id).first()
+    return user
+
+
+def _ensure_user_access(requested_user_id: str):
+    payload = getattr(g, "miniapp_jwt_payload", {})
+    token_uid = str(payload.get("uid", "")).strip()
+    token_openid = str(payload.get("openid", "")).strip()
+    request_key = str(requested_user_id).strip()
+    if request_key and request_key not in {token_uid, token_openid}:
+        return _json_error("无权访问其他用户的数据", 403)
+    return None
+
+
 # ============================================================
 # API 1: 获取设备实时状态（数据源：MongoDB）
 # GET /api/miniapp/device/<device_id>/realtime
 # ============================================================
 @miniapp_bp.get("/device/<device_id>/realtime")
+@miniapp_dual_auth_required
 def get_device_realtime(device_id: str):
     """
     获取指定设备的实时状态
@@ -207,6 +234,7 @@ def get_device_realtime(device_id: str):
 # 支持查询参数: ?days=7 (默认7天) / ?start=2026-04-20&end=2026-04-27
 # ============================================================
 @miniapp_bp.get("/user/<user_id>/stats")
+@miniapp_dual_auth_required
 def get_user_stats(user_id: str):
     """
     获取指定用户的历史统计数据
@@ -220,21 +248,17 @@ def get_user_stats(user_id: str):
     """
     session = None
     try:
-        from src.utils.mysql_db import User, UserDailyStat
+        from src.utils.mysql_db import UserDailyStat
 
         session = _get_mysql_session()
+        auth_error = _ensure_user_access(user_id)
+        if auth_error:
+            return auth_error
 
         # ---- 查找用户 ----
-        user = None
-        # 尝试用 id 查找
-        try:
-            uid = int(user_id)
-            user = session.query(User).filter(User.id == uid).first()
-        except (ValueError, TypeError):
-            pass
-        # 尝试用 openid 查找
+        user = _resolve_user(session, user_id)
         if not user:
-            user = session.query(User).filter(User.openid == user_id).first()
+            return _json_error(f"未找到用户 {user_id}", 404)
 
         # ---- 解析查询参数 ----
         days = request.args.get("days", type=int, default=7)
@@ -261,11 +285,7 @@ def get_user_stats(user_id: str):
             UserDailyStat.date <= date_end
         )
 
-        if user:
-            query = query.filter(UserDailyStat.user_id == user.id)
-        else:
-            # 如果没有找到用户记录，尝试用 user_id 作为 device_id 查询
-            query = query.filter(UserDailyStat.device_id == user_id)
+        query = query.filter(UserDailyStat.user_id == user.id)
 
         records = query.order_by(UserDailyStat.date.asc()).all()
 
@@ -295,14 +315,14 @@ def get_user_stats(user_id: str):
         avg_score = round(total_score / num_days, 1) if num_days > 0 else 0
 
         result = {
-            "user_id": str(user.id) if user else user_id,
-            "nickname": user.nickname if user else "未知用户",
+            "user_id": str(user.id),
+            "nickname": user.nickname,
             "query_days": num_days,
             "summary": {
                 "avg_health_score": avg_score,                # 平均健康评分
                 "total_seated_minutes": round(total_seated, 1),  # 总入座时长
                 "total_bad_posture_count": total_bad,         # 总不良坐姿次数
-                "total_accumulated_score": user.total_score if user else 0
+                "total_accumulated_score": user.total_score
             },
             "daily_records": daily_list
         }
@@ -322,6 +342,7 @@ def get_user_stats(user_id: str):
 # 支持查询参数: ?date=2026-04-27 (默认今天) / ?limit=10
 # ============================================================
 @miniapp_bp.get("/leaderboard")
+@miniapp_dual_auth_required
 def get_leaderboard():
     """
     获取健康坐姿排行榜
@@ -410,6 +431,7 @@ def get_leaderboard():
 # POST /api/miniapp/user/register
 # ============================================================
 @miniapp_bp.post("/user/register")
+@api_key_required
 def register_user():
     """
     用户注册或更新信息
@@ -420,6 +442,7 @@ def register_user():
     请求体：
     {
         "openid": "wx_user_xxx",
+        "password": "plain_password",
         "nickname": "用户昵称",
         "avatar_url": "https://...",
         "device_id": "device_001"
@@ -433,6 +456,7 @@ def register_user():
 
         data = request.get_json(silent=True) or {}
         openid = data.get("openid", "").strip()
+        password = str(data.get("password", "")).strip()
         if not openid:
             return _json_error("缺少 openid 参数，不要直接传微信 login code")
 
@@ -444,14 +468,21 @@ def register_user():
             user.nickname = data.get("nickname", user.nickname)
             user.avatar_url = data.get("avatar_url", user.avatar_url)
             user.device_id = data.get("device_id", user.device_id)
+            if password:
+                user.password_hash = generate_password_hash(password)
+            elif not (user.password_hash or "").strip():
+                return _json_error("用户尚未设置密码，请补充 password 字段")
             user.updated_at = datetime.utcnow()
         else:
+            if not password:
+                return _json_error("首次注册必须提供 password")
             # 创建新用户
             user = User(
                 openid=openid,
                 nickname=data.get("nickname", f"用户_{openid[-6:]}"),
                 avatar_url=data.get("avatar_url", ""),
                 device_id=data.get("device_id", ""),
+                password_hash=generate_password_hash(password),
                 sedentary_threshold_min=45,
                 reminder_enabled=True,
                 visible_in_leaderboard=True,
@@ -472,11 +503,50 @@ def register_user():
             session.close()
 
 
+@miniapp_bp.post("/user/login")
+@api_key_required
+def login_miniapp_user():
+    """小程序用户登录，返回 Bearer Token。"""
+    session = None
+    try:
+        from src.utils.mysql_db import User
+
+        session = _get_mysql_session()
+        data = request.get_json(silent=True) or {}
+        openid = str(data.get("openid", "")).strip()
+        password = str(data.get("password", "")).strip()
+
+        if not openid or not password:
+            return _json_error("缺少 openid 或 password 参数")
+
+        user = session.query(User).filter(User.openid == openid).first()
+        if not user:
+            return _json_error("用户不存在", 404)
+        if not (user.password_hash or "").strip():
+            return _json_error("用户尚未设置密码，请先注册并设置 password", 400)
+        if not check_password_hash(user.password_hash, password):
+            return _json_error("密码错误", 401)
+
+        token = issue_miniapp_token(user.id, user.openid)
+        result = {
+            "token": token,
+            "token_type": "Bearer",
+            "user": user.to_dict(),
+        }
+        return _json_ok(result, "登录成功")
+    except Exception as e:
+        return _json_error(f"用户登录失败: {str(e)}", 500)
+    finally:
+        if session:
+            session.close()
+
+
 # ============================================================
 # API 5: 更新用户设置（数据源：MySQL）
 # PUT /api/miniapp/user/<user_id>/settings
 # ============================================================
 @miniapp_bp.put("/user/<user_id>/settings")
+@miniapp_dual_auth_required
 def update_user_settings(user_id: str):
     """
     更新用户设置（久坐提醒阈值等）
@@ -493,21 +563,16 @@ def update_user_settings(user_id: str):
         from src.utils.mysql_db import User
 
         session = _get_mysql_session()
+        auth_error = _ensure_user_access(user_id)
+        if auth_error:
+            return auth_error
 
         data = request.get_json(silent=True) or {}
 
         # ---- 查找用户 ----
-        user = None
-        try:
-            uid = int(user_id)
-            user = session.query(User).filter(User.id == uid).first()
-        except (ValueError, TypeError):
-            pass
-        if not user:
-            user = session.query(User).filter(User.openid == user_id).first()
+        user = _resolve_user(session, user_id)
 
         if not user:
-            session.close()
             return _json_error(f"未找到用户 {user_id}", 404)
 
         # ---- 更新设置项 ----
@@ -526,7 +591,6 @@ def update_user_settings(user_id: str):
             updated = True
 
         if not updated:
-            session.close()
             return _json_error("没有提供需要更新的设置项")
 
         user.updated_at = datetime.utcnow()

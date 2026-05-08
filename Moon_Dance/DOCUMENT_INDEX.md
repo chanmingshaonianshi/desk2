@@ -59,7 +59,7 @@ Moon_Dance/
 |------|------|
 | `auth.py` | **身份鉴权模块** |
 | `routes.py` | **API 路由与业务调度模块**（设备数据上传） |
-| `miniapp_routes.py` | **小程序 API 路由模块**（实时状态、历史统计、排行榜、用户管理） |
+| `miniapp_routes.py` | **小程序 API 路由模块**（实时状态、历史统计、排行榜、密码注册/登录、用户设置） |
 
 ---
 
@@ -184,7 +184,7 @@ Moon_Dance/
 ### `src/api/auth.py` — 身份鉴权模块
 
 **类型**：Flask Blueprint + 中间件装饰器  
-**职责**：提供两种独立的身份鉴权机制，保护 API 接口不被未授权访问。
+**职责**：提供 Web/API 与小程序两套鉴权能力，保护上传接口和小程序接口不被未授权访问。
 
 **关键组件**：
 
@@ -194,17 +194,25 @@ Moon_Dance/
 | `_issue_token()` | JWT 签发 | 使用 `JWT_SECRET` 和 `HS256` 算法生成含 `sub/iat/exp` 字段的 JWT，有效期默认 3600 秒 |
 | `@token_required` | JWT 验证装饰器 | 检查 `Authorization: Bearer <token>` 头，`jwt.decode()` 验证签名和过期，失败返回 `403` |
 | `@api_key_required` | API Key 验证装饰器 | 检查 `X-API-Key` 请求头，与 `settings.py` 中的 `API_KEY` 对比，失败返回 `401` |
+| `issue_miniapp_token()` | 小程序 Token 签发 | 为小程序用户签发独立类型的 JWT，附带 `uid` 和 `openid` |
+| `@miniapp_token_required` | 小程序 JWT 验证 | 仅接受 `type=miniapp_user` 的 Bearer Token |
+| `@miniapp_dual_auth_required` | 双重鉴权装饰器 | 同时要求 `X-API-Key` 与小程序 Bearer Token |
 
 **两种认证路径**：
 - **JWT 路径**：`POST /login` → 获取 Token → 携带 `Authorization: Bearer <token>` 调用 `/api/v1/upload`
 - **API Key 路径**：直接携带 `X-API-Key: <key>` 调用 `/api/v2/ingest`（无需登录）
+
+**小程序认证路径**：
+- `POST /api/miniapp/user/register`：仅校验 `X-API-Key`，首次注册必须提供 `password`
+- `POST /api/miniapp/user/login`：仅校验 `X-API-Key`，登录成功返回小程序 Bearer Token
+- 小程序业务接口：统一要求 `X-API-Key + Authorization: Bearer <miniapp_token>`
 
 ---
 
 ### `src/api/miniapp_routes.py` — 小程序 API 路由模块
 
 **类型**：Flask Blueprint（`/api/miniapp` 前缀）  
-**职责**：为微信小程序端提供实时坐姿状态查询、个人历史统计、多用户健康排行榜、用户注册与设置管理等接口。
+**职责**：为微信小程序端提供实时坐姿状态查询、个人历史统计、多用户健康排行榜、密码注册/登录、用户设置管理等接口。
 
 **双数据库数据源**：
 - 实时状态接口 → **MongoDB**（pressure_data 原始传感器数据）
@@ -214,16 +222,20 @@ Moon_Dance/
 
 | 接口 | 方法 | 数据源 | 说明 |
 |------|------|--------|------|
-| `GET /api/miniapp/device/<device_id>/realtime` | 实时状态 | MongoDB | 返回最新坐姿状态、连续入座时长、设备在线状态 |
-| `GET /api/miniapp/user/<user_id>/stats` | 历史统计 | MySQL | 按天数或日期范围查询每日汇总，返回含平均评分的聚合结果 |
-| `GET /api/miniapp/leaderboard` | 排行榜 | MySQL | 按健康评分倒序取 TOP N，JOIN users 表获取昵称 |
-| `POST /api/miniapp/user/register` | 用户注册 | MySQL | 小程序 openid 绑定设备，upsert 避免重复创建 |
-| `PUT /api/miniapp/user/<user_id>/settings` | 设置更新 | MySQL | 修改久坐提醒阈值、排行榜可见性等 |
+| `GET /api/miniapp/device/<device_id>/realtime` | 实时状态 | MongoDB | 双重鉴权；返回最新坐姿状态、连续入座时长、设备在线状态 |
+| `GET /api/miniapp/user/<user_id>/stats` | 历史统计 | MySQL | 双重鉴权；按天数或日期范围查询每日汇总 |
+| `GET /api/miniapp/leaderboard` | 排行榜 | MySQL | 双重鉴权；按健康评分倒序取 TOP N |
+| `POST /api/miniapp/user/register` | 用户注册/补密码 | MySQL | 仅需 API Key；首次注册必须提供 `password` |
+| `POST /api/miniapp/user/login` | 用户登录 | MySQL | 仅需 API Key；返回小程序 Bearer Token |
+| `PUT /api/miniapp/user/<user_id>/settings` | 设置更新 | MySQL | 双重鉴权；修改久坐提醒阈值、排行榜可见性等 |
 
 **关键实现**：
 - 排行榜使用 SQLAlchemy LEFT JOIN（user_daily_stats JOIN users），一次查询完成排名和用户信息关联
 - 实时状态接口通过回溯 MongoDB 最近 4 小时数据计算连续入座时长，相邻数据间隔 > 30 秒视为中断
 - 所有响应使用统一 `{ok, message, data}` 格式
+- `register` 使用 `generate_password_hash()` 保存密码哈希，不返回明文密码
+- `login` 使用 `check_password_hash()` 校验密码后签发专用小程序 Token
+- `stats` / `settings` 会校验 token 中的 `uid/openid`，拒绝跨用户访问
 
 ---
 
@@ -548,11 +560,12 @@ scripts/daily_aggregation.py (每日凌晨 00:05 定时任务)
 MySQL: users + user_daily_stats（用户关联数据）
     ▼
 src/api/miniapp_routes.py (小程序 API 蓝图)
-    ├─▶ GET  /device/<id>/realtime   → MongoDB 实时坐姿状态
-    ├─▶ GET  /user/<id>/stats        → MySQL 个人历史统计
-    ├─▶ GET  /leaderboard            → MySQL 健康排行榜 TOP N
-    ├─▶ POST /user/register          → MySQL 用户注册/绑定
-    └─▶ PUT  /user/<id>/settings     → MySQL 设置更新
+    ├─▶ POST /user/register          → API Key 注册/补设密码
+    ├─▶ POST /user/login             → API Key 登录换取 Bearer Token
+    ├─▶ GET  /device/<id>/realtime   → 双重鉴权 + MongoDB 实时坐姿状态
+    ├─▶ GET  /user/<id>/stats        → 双重鉴权 + MySQL 个人历史统计
+    ├─▶ GET  /leaderboard            → 双重鉴权 + MySQL 健康排行榜 TOP N
+    └─▶ PUT  /user/<id>/settings     → 双重鉴权 + MySQL 设置更新
 ```
 
 ### 双数据库职责划分
@@ -565,8 +578,9 @@ src/api/miniapp_routes.py (小程序 API 蓝图)
 │  ├─ timestamp (ms)               │   │  ├─ openid (唯一)                  │
 │  ├─ sensors {left_force_n, ...}  │   │  ├─ nickname / avatar_url          │
 │  ├─ analysis {deviation_ratio}   │   │  ├─ device_id (绑定设备)           │
-│  ├─ is_seated                    │   │  ├─ sedentary_threshold_min        │
-│  └─ 设备心跳/在线状态            │   │  ├─ reminder_enabled               │
+│  ├─ is_seated                    │   │  ├─ password_hash                  │
+│  └─ 设备心跳/在线状态            │   │  ├─ sedentary_threshold_min        │
+│                                  │   │  ├─ reminder_enabled               │
 │                                  │   │  └─ visible_in_leaderboard         │
 │  daily_stats (兼容保留)           │   │                                    │
 │                                  │   │  user_daily_stats (每日统计汇总)    │
@@ -618,9 +632,9 @@ docs/
 | 层级 | 入口文件 | 核心职责 |
 |------|---------|---------|
 | **服务器启动** | `main_api.py` | Flask App 创建、TLS 证书生成、蓝图注册（auth + api + miniapp）、请求日志 |
-| **鉴权层** | `src/api/auth.py` | JWT 签发验证（`/login`）、API Key 校验、`@token_required` / `@api_key_required` 装饰器 |
+| **鉴权层** | `src/api/auth.py` | JWT 签发验证（`/login`）、API Key 校验、小程序 token 签发、`@miniapp_dual_auth_required` 双重鉴权 |
 | **数据接口层** | `src/api/routes.py` | `/api/v1/upload`（JWT）、`/api/v2/ingest`（API Key）、幂等去重、Celery 任务投递 |
-| **小程序接口层** | `src/api/miniapp_routes.py` | 实时状态(MongoDB)、历史统计/排行榜/用户管理(MySQL)（`/api/miniapp/*`） |
+| **小程序接口层** | `src/api/miniapp_routes.py` | 密码注册/登录、实时状态(MongoDB)、历史统计/排行榜/设置(MySQL)（`/api/miniapp/*`） |
 | **每日汇总任务** | `scripts/daily_aggregation.py` | 凌晨定时聚合 MongoDB 原始数据 → 新版健康评分(坐姿+合规) → 双写 MongoDB + MySQL |
 | **主异步链路** | `src/core/worker.py` | Celery + Redis 消费上传任务，异步写盘 |
 | **扩展MQ客户端** | `src/core/mq_client.py` | Redis Stream 消息发布、本地缓存、指数退避重传 |
@@ -628,7 +642,7 @@ docs/
 | **配置中心** | `src/config/settings.py` | 所有配置常量、环境变量读取、路径计算（含 MYSQL_URI） |
 | **数据存储** | `src/utils/json_db.py` | JSONL 追加写日志、幂等 ID 管理、历史数据读写 |
 | **MongoDB引擎** | `src/utils/mongo_db.py` | 异步 MongoDB 压力数据实时直写（专职原始明细数据） |
-| **MySQL引擎** | `src/utils/mysql_db.py` | SQLAlchemy ORM，User + UserDailyStat 模型（专职用户关联数据） |
+| **MySQL引擎** | `src/utils/mysql_db.py` | SQLAlchemy ORM，User + UserDailyStat 模型，支持 `password_hash` 自动补列 |
 | **设备模拟器** | `src/core/device_simulator.py` | 模拟传感器数据生成，双路上报（API + MQ） |
 | **客户端启动** | `main.py` | GUI 模式或无头模式，10 路并发模拟 |
 | **MQ节点管理** | `scripts/mq_manager.py` | 启停 validator/writer/logger，管理副本数 |

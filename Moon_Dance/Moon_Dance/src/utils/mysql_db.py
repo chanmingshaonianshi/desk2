@@ -15,7 +15,7 @@ from datetime import datetime
 
 from sqlalchemy import (
     create_engine, Column, Integer, String, Float, Boolean,
-    DateTime, Text, UniqueConstraint, Index
+    DateTime, Text, UniqueConstraint, Index, inspect, text
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 
@@ -59,6 +59,7 @@ def ensure_initialized(max_retries: int = 10, retry_interval: float = 2.0) -> No
         for _ in range(max_retries):
             try:
                 Base.metadata.create_all(bind=engine)
+                _ensure_schema_updates()
                 _init_done = True
                 print("[MySQL] ✅ 数据库表初始化完成（users, user_daily_stats）")
                 return
@@ -68,6 +69,23 @@ def ensure_initialized(max_retries: int = 10, retry_interval: float = 2.0) -> No
 
         print(f"[MySQL] ❌ 数据库表初始化失败: {last_error}")
         raise last_error
+
+
+def _ensure_schema_updates() -> None:
+    """对已存在的表补充新字段，兼容无迁移工具的线上环境。"""
+    inspector = inspect(engine)
+    if "users" not in inspector.get_table_names():
+        return
+
+    columns = {col["name"] for col in inspector.get_columns("users")}
+    if "password_hash" in columns:
+        return
+
+    with engine.begin() as conn:
+        if engine.dialect.name == "mysql":
+            conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255) NULL COMMENT '用户密码哈希'"))
+        else:
+            conn.execute(text("ALTER TABLE users ADD COLUMN password_hash VARCHAR(255)"))
 
 
 # ============================================================
@@ -86,6 +104,7 @@ class User(Base):
     nickname = Column(String(64), default="", comment="用户昵称")
     avatar_url = Column(String(512), default="", comment="头像 URL")
     device_id = Column(String(64), default="", index=True, comment="绑定的设备 ID")
+    password_hash = Column(String(255), default="", comment="用户密码哈希")
 
     # 久坐提醒设置
     sedentary_threshold_min = Column(Integer, default=45, comment="久坐提醒阈值（分钟）")
@@ -212,6 +231,3 @@ def check_connection():
     except Exception as e:
         return False, str(e)
 
-
-# 导入 text 用于原始 SQL
-from sqlalchemy import text
