@@ -2,6 +2,10 @@
 
 本文档是整个项目的导航中心，完整描述代码架构、目录作用和各关键 Python 文件的职责。
 
+文档维护规则：
+- 每次修改代码后，必须同步检查并更新对应文档，保证文档与当前实现一致。
+- 架构变化优先更新 `docs/ARCHITECTURE.md` 与 `docs/BACKEND_IMPLEMENTATION.md`。
+
 ---
 
 ## 📁 顶层目录结构
@@ -620,7 +624,7 @@ docs/
 ├── API.md               # API接口参考（参数、请求/响应示例、错误码）
 ├── API.html             # HTML可视化版API文档（浏览器直接打开）
 ├── API_OPERATION.md     # API运维指南（测试步骤、日志排查）
-├── MQ_ARCHITECTURE.md   # MQ分布式架构设计（队列边界、消息格式）
+├── BACKEND_IMPLEMENTATION.md # 后端实现说明（老师答辩、功能实现思路）
 ├── MQ_TEST_GUIDE.md     # MQ测试操作指南
 └── README_DOCKER.md     # Docker部署说明
 ```

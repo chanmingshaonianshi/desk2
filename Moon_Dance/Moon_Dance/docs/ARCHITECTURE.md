@@ -1,303 +1,317 @@
-# Moon_Dance 架构总览
+# Moon_Dance 最新架构文档
 
-本文件是项目唯一的整体架构说明，前端、后端、API、MQ、部署关系都以这里为准。其他文档只保留接口、运维或测试细节，不再重复讲完整架构。
+本文件是当前项目唯一的总架构说明。以后涉及架构、模块边界、数据流、部署方式的修改，都以本文件为准。
 
-## 一、系统定位
+## 1. 文档维护规则
 
-Moon_Dance 当前是一个“设备数据采集 + 坐姿分析 + 异步处理 + 文件输出”的 Python 项目，代码里实际存在两条并行的数据入口：
+这条规则从现在开始固定执行：
 
-1. **HTTP API 接入链路**
-   - 面向外部客户端或压测脚本
-   - 通过 Flask API 接收数据
-   - 通过 Celery + Redis 异步处理
-   - 是 `deploy/docker-compose.yml` 中默认部署的主链路
+1. 每次修改代码时，必须同步检查是否需要更新本文档。
+2. 如果改动影响接口流程、模块职责、部署方式、数据流或数据库结构，必须同时更新：
+   - `docs/ARCHITECTURE.md`
+   - `docs/BACKEND_IMPLEMENTATION.md`
+   - `DOCUMENT_INDEX.md`
+   - 相关接口文档
+3. 如果文档与代码不一致，以代码为准，并在本次提交里修正文档。
 
-2. **桌面端模拟器直连 MQ 链路**
-   - 面向本地演示、设备模拟、Redis Stream 验证
-   - 由桌面端/模拟器生成数据
-   - 同时可发往 API，也可直接发往 Redis Stream
-   - 由 `src/mq_workers` 下的独立 Worker 处理
+## 2. 系统定位
 
-这意味着项目不是“只有一种 MQ 方案”，而是同时保留了：
+Moon_Dance 当前是一个“智能坐垫数据采集 + 后端异步处理 + 小程序查询 + 报表输出”的 Python 系统。
 
-- **生产主链路**：Flask + Celery + Redis
-- **实验/扩展链路**：Redis Stream + 自定义 MQ Worker
+它同时包含四类能力：
 
-## 二、整体架构图
+1. 本地设备模拟与桌面演示
+2. 云端 API 接收与异步处理
+3. 小程序用户注册、登录、鉴权与数据查询
+4. Redis Stream 风格的扩展 MQ 链路
 
-```mermaid
-flowchart LR
-    subgraph Frontend[前端与数据入口]
-        GUI[桌面端 GUI / 本地演示]
-        Device[设备模拟器]
-        Client[外部客户端 / 压测脚本]
-    end
+## 3. 当前主架构结论
 
-    subgraph Access[接入层]
-        Nginx[Nginx 反向代理]
-        API[Flask API]
-        Auth[JWT 鉴权 + request_id 幂等]
-    end
+如果老师问“现在系统主要是怎么跑的”，标准答案是：
 
-    subgraph Async[异步处理层]
-        Redis[(Redis)]
-        Celery[Celery Worker]
-        Stream[Redis Stream]
-        MQWorkers[validator / writer / logger]
-    end
+- 对外主链路：`Flask API + Redis + Celery Worker + Nginx`
+- 小程序链路：`Flask + MySQL + MongoDB + 双重鉴权`
+- 本地演示链路：`main.py / simulator_client.py` 驱动模拟器
+- 扩展链路：`Redis Stream + validator/writer/logger`，可独立启停与扩展
 
-    subgraph Domain[业务与存储]
-        Analyzer[坐姿分析与数据整理]
-        Realtime[实时 JSONL 日志]
-        Reports[Excel 报表]
-        Cache[客户端本地重传缓存]
-    end
+也就是说，这个项目不是单一后端，而是“一条主交付链路 + 一条扩展实验链路”的双链路结构。
 
-    Client --> Nginx --> API --> Auth --> Redis --> Celery --> Analyzer
-    GUI --> Device
-    Device --> API
-    Device --> Stream
-    Stream --> MQWorkers --> Analyzer
-    Device --> Cache
-    Analyzer --> Realtime
-    Analyzer --> Reports
-```
-
-## 三、代码层级与职责
+## 4. 整体架构图
 
 ```text
-Moon_Dance/
-├── main.py                   # 桌面端 / 无头模拟器入口
-├── main_api.py               # API 服务入口
-├── deploy/
-│   ├── docker-compose.yml    # Redis / Nginx / API / Worker 部署编排
-│   └── nginx.conf            # 反向代理与负载均衡
-├── docs/
-│   ├── ARCHITECTURE.md       # 整体架构说明
-│   ├── API.md                # 接口契约
-│   ├── MQ_ARCHITECTURE.md    # 仅讲消息队列设计
-│   └── MQ_TEST_GUIDE.md      # MQ 测试步骤
-├── scripts/
-│   └── mq_manager.py         # Redis Stream Worker 管理脚本
-└── src/
-    ├── api/                  # Flask 路由、鉴权、请求处理
-    ├── config/               # 配置项、路径、环境变量
-    ├── core/                 # 核心业务、Celery Worker、设备模拟器、MQ 客户端
-    ├── mq_workers/           # Redis Stream 的独立处理节点
-    ├── ui/                   # 桌面端界面逻辑
-    └── utils/                # 通用工具
+本地模拟器 / 小程序前端 / 外部客户端
+                │
+                ▼
+        Nginx / Flask API
+                │
+        ┌───────┼───────────────────────┐
+        │       │                       │
+        ▼       ▼                       ▼
+   上传接口   小程序接口            健康检查/登录
+        │       │
+        ▼       ▼
+     Redis    MySQL + MongoDB
+        │
+        ▼
+   Celery Worker
+        │
+        ▼
+ JSONL 日志 / MongoDB / Excel 报表
+
+补充链路：
+设备模拟器 -> Redis Stream -> validator -> writer/logger
 ```
 
-## 四、前端、后端、API、MQ 的对应关系
+## 5. 代码分层
 
-| 领域 | 当前实现 | 代码位置 | 作用 |
-|------|----------|----------|------|
-| 前端 | 桌面端 GUI | `main.py`、`src/ui/` | 本地演示、监控、驱动模拟采样 |
-| 数据入口 | 设备模拟器 | `src/core/device_simulator.py` | 生成压力数据，发送到 API 和/或 MQ |
-| API 入口 | Flask 应用启动 | `main_api.py` | 组装 Flask 应用、注册蓝图、启动 HTTP/HTTPS 服务 |
-| API 层 | Flask Blueprint | `src/api/routes.py`、`src/api/auth.py` | 对外提供登录、上传、健康检查等接口 |
-| 后端核心 | 业务处理与落盘 | `src/core/worker.py`、`src/core/*` | 异步消费任务、记录日志、生成结果 |
-| MQ 主链路 | Celery + Redis | `src/core/worker.py` | API 上传后的异步处理 |
-| MQ 扩展链路 | Redis Stream + 自定义 Worker | `src/core/mq_client.py`、`src/mq_workers/*` | 模拟器直连消息流、验证与写入 |
-| 部署入口 | Docker + Nginx | `deploy/docker-compose.yml` | 生产化运行与横向扩展 |
+### 5.1 接入层
 
-## 五、API 主链路
-
-### 1. 请求入口
-
-外部客户端通过 HTTP/HTTPS 调用 API：
-
-- 登录获取 JWT
-- 上传坐姿数据
-- 通过 `request_id` 做幂等控制
-
-主处理顺序如下：
-
-```mermaid
-sequenceDiagram
-    participant Client as 客户端
-    participant Nginx as Nginx
-    participant API as Flask API
-    participant Redis as Redis Broker
-    participant Worker as Celery Worker
-    participant Store as 文件存储
-
-    Client->>Nginx: 上传数据
-    Nginx->>API: 转发请求
-    API->>API: JWT 校验 / request_id 校验
-    API->>Redis: 投递 Celery 任务
-    API-->>Client: 快速返回
-    Worker->>Redis: 拉取任务
-    Worker->>Store: 写入实时日志 / 更新处理状态
-```
-
-### 2. 主链路上的模块边界
-
+- `main_api.py`
+  - 创建 Flask 应用
+  - 注册蓝图
+  - 统一请求日志
+  - 提供 `/health`
 - `src/api/auth.py`
-  - 负责登录、JWT 颁发、令牌校验
+  - 负责 JWT、API Key、小程序 token 双重鉴权
 - `src/api/routes.py`
-  - 负责对外暴露上传接口与基础响应
+  - 负责设备上传接口
+- `src/api/miniapp_routes.py`
+  - 负责小程序业务接口
+
+### 5.2 核心业务层
+
+- `src/core/device_simulator.py`
+  - 生成设备压力数据
+  - 支持 HTTP 上传和 MQ 发送
 - `src/core/worker.py`
-  - 负责 Celery 任务消费、数据整理、结果落盘
+  - 处理 Celery 异步任务
+  - 执行日志落盘和数据整理
+- `src/core/live_monitor.py`
+  - 读取日志并表格化展示
+- `src/core/report_manager.py`
+  - 负责报表批量生成
+- `src/core/dynamic_scaler.py`
+  - 根据负载自动扩缩容
+
+### 5.3 数据与工具层
+
+- `src/utils/json_db.py`
+  - JSONL 日志、幂等 ID 管理
+- `src/utils/mongo_db.py`
+  - 原始明细数据写入 MongoDB
+- `src/utils/mysql_db.py`
+  - 用户、设置、排行榜、历史统计
 - `src/config/settings.py`
-  - 负责 Redis 地址、数据目录、日志目录等运行配置
+  - 所有路径和环境变量配置中心
 
-### 3. 为什么 API 链路是“当前主架构”
-
-因为当前容器编排文件只默认启动以下服务：
-
-- Redis
-- Nginx
-- API
-- Celery Worker
-
-也就是说，**默认部署并不会自动启动 `src/mq_workers` 这套 Redis Stream Worker**。因此对外服务时，应把 Flask + Celery 视为当前主架构。
-
-## 六、桌面端与模拟器链路
-
-桌面端不是 Web 前端，而是本地 GUI 工具。它的主要职责是：
-
-- 驱动设备模拟
-- 展示实时结果
-- 把采集数据送入后端链路
-
-`src/core/device_simulator.py` 当前会做三件事：
-
-1. 在本地生成压力与分析数据
-2. 异步调用 HTTP API
-3. 在启用 MQ 时，直接把消息发往 Redis Stream
-
-因此桌面端/模拟器其实是一个“双投递入口”：
-
-- 一条走 **HTTP API**
-- 一条走 **Redis Stream**
-
-这也是项目里同时存在两套异步处理方案的根本原因。
-
-## 七、MQ 架构拆解
-
-### 7.1 Celery + Redis：默认部署方案
-
-用途：
-
-- 处理 API 上传后的异步任务
-- 降低 API 接口的同步阻塞
-- 支持通过队列长度做扩容
-
-特点：
-
-- 对外接口稳定
-- 与 `docker-compose.yml` 直接对应
-- 更适合生产部署
-
-处理链路：
-
-```text
-客户端 -> Flask API -> Redis Broker -> Celery Worker -> JSONL/报表
-```
-
-### 7.2 Redis Stream：模拟器/扩展方案
-
-用途：
-
-- 设备模拟器直接写消息流
-- 验证多节点消费、重传、死信、分工式处理
-
-涉及模块：
+### 5.4 MQ 扩展层
 
 - `src/core/mq_client.py`
+  - Redis Stream 生产者
 - `src/mq_workers/base_worker.py`
+  - MQ Worker 基类
 - `src/mq_workers/validator_worker.py`
+  - 校验消息
 - `src/mq_workers/writer_worker.py`
+  - 写入日志文件
 - `src/mq_workers/logger_worker.py`
+  - 统计运行日志
 - `scripts/mq_manager.py`
+  - 独立启停与查看节点状态
 
-处理链路：
+## 6. 四条核心业务链路
+
+### 6.1 本地模拟上传链路
 
 ```text
-设备模拟器 -> upstream_data -> validator_worker
-          -> validated_data -> writer_worker / logger_worker
-          -> dead_letter    -> 失败消息保留
+main.py / simulator_client.py
+    -> DeviceSimulator
+    -> HTTP POST /api/v1/upload 或 /api/v2/ingest
+    -> Flask API
+    -> Redis
+    -> Celery Worker
+    -> upload_log.jsonl / realtime_log.jsonl / MongoDB / Excel 报表
 ```
 
-适用场景：
+用途：
 
-- 本地压测与演示
-- 验证消息可靠性
-- 后续拆分更细粒度微服务时继续演进
+- 本地演示
+- 云端上传验证
+- 表格监控与报表生成
 
-### 7.3 两套 MQ 的关系
+### 6.2 云端上传主链路
 
-| 问题 | 当前答案 |
-|------|----------|
-| 项目有没有 MQ | 有，而且有两套异步通道 |
-| 默认部署走哪套 | Celery + Redis |
-| Redis Stream 还在不在 | 在，主要用于模拟器直连和扩展实验 |
-| 两套是否互斥 | 不互斥，可以并存 |
-| 架构文档应该以谁为主 | 以 Celery 主链路为主，再说明 Redis Stream 是补充链路 |
-
-## 八、后端落盘与输出
-
-后端当前以文件输出为主，而不是关系型数据库：
-
-- **实时日志**
-  - 保存设备上传后的逐条记录
-  - 由 Worker 或写入节点落盘
-- **报表文件**
-  - 用于批量报表与结果输出
-  - 主要为 Excel 产物
-- **客户端缓存**
-  - MQ 发送失败时，消息先落本地缓存
-  - 后续后台线程自动重传
-
-这些目录多数会在运行时自动创建，因此仓库内不需要长期保留空目录。
-
-## 九、部署架构
-
-```mermaid
-flowchart TD
-    User[客户端 / 设备 / 压测端] --> Nginx[Nginx]
-    Nginx --> API1[API 副本]
-    Nginx --> API2[API 副本]
-    Nginx --> API3[API 副本]
-
-    API1 --> Redis[(Redis)]
-    API2 --> Redis
-    API3 --> Redis
-
-    Redis --> Worker1[Celery Worker]
-    Redis --> Worker2[Celery Worker]
-    Redis --> WorkerN[Celery Worker]
-
-    Worker1 --> Files[数据目录 / 报表目录]
-    Worker2 --> Files
-    WorkerN --> Files
+```text
+客户端
+    -> Nginx
+    -> Flask 路由
+    -> 鉴权
+    -> request_id 幂等校验
+    -> Celery delay()
+    -> Worker 异步处理
+    -> 日志落盘与数据存储
 ```
 
-`deploy/docker-compose.yml` 体现的就是这套部署模型：
+主特点：
 
-- `nginx` 负责入口与负载均衡
-- `api` 默认按多副本思路部署
-- `worker` 负责异步任务消费
-- `redis` 同时承担 Broker / 队列基础设施角色
+- 上传接口快速返回 `202`
+- 实际写入逻辑在 Worker 中完成
+- 通过 `request_id` 避免重复处理
 
-## 十、推荐阅读边界
+### 6.3 小程序查询链路
 
-为了避免重复，后续文档按下面的边界阅读：
+```text
+注册 -> 设置 password
+登录 -> 获取 Bearer Token
+业务接口 -> X-API-Key + Authorization 双重鉴权
+```
 
-- `ARCHITECTURE.md`
-  - 只看整体系统怎么组成
-- `API.md`
-  - 只看接口定义、请求参数、响应格式
-- `MQ_ARCHITECTURE.md`
-  - 只看消息队列设计与两套异步方案的边界
-- `MQ_TEST_GUIDE.md`
-  - 只看如何验证 MQ
-- `README_DOCKER.md`
-  - 只看如何构建和运行容器
+数据来源分工：
 
-## 十一、架构结论
+- MongoDB：实时设备状态
+- MySQL：用户信息、设置、排行榜、统计
 
-如果只用一句话概括当前代码结构：
+当前小程序接口包括：
 
-**Moon_Dance 是一个以 Flask API + Celery + Redis 为主运行链路、以桌面模拟器 + Redis Stream 为补充链路、最终把数据写入文件与报表输出的分层 Python 系统。**
+- `POST /api/miniapp/user/register`
+- `POST /api/miniapp/user/login`
+- `GET /api/miniapp/device/<device_id>/realtime`
+- `GET /api/miniapp/user/<user_id>/stats`
+- `GET /api/miniapp/leaderboard`
+- `PUT /api/miniapp/user/<user_id>/settings`
+
+### 6.4 Redis Stream 扩展链路
+
+```text
+DeviceSimulator
+    -> mq_client.py
+    -> upstream_data
+    -> validator_worker
+    -> validated_data
+    -> writer_worker / logger_worker
+    -> realtime_log.jsonl / statistics.log
+```
+
+这条链路不是默认公网主链路，但仍然保留，主要用于：
+
+- 演示消息队列架构
+- 模块独立启停
+- 水平扩展验证
+- 后续微服务化预留
+
+## 7. 当前鉴权架构
+
+### 7.1 设备上传接口
+
+- `/login`
+  - 使用 `app_id + app_secret` 获取 Bearer Token
+- `/api/v1/upload`
+  - 使用 JWT Bearer Token
+- `/api/v2/ingest`
+  - 使用统一 `X-API-Key`
+
+### 7.2 小程序接口
+
+小程序采用双重保险：
+
+- `X-API-Key: myh`
+- `Authorization: Bearer <miniapp_token>`
+
+实现目的：
+
+- API Key 控制接入端
+- JWT 控制具体用户身份
+- `stats` 和 `settings` 再根据 `uid/openid` 做访问控制
+
+## 8. 数据存储架构
+
+### 8.1 JSONL
+
+用于：
+
+- 实时传输记录
+- 上传监控表格
+- 演示与快速排查
+
+关键文件：
+
+- `data/realtime_logs/upload_log.jsonl`
+- `data/realtime_logs/realtime_log.jsonl`
+- `data/realtime_logs/processed_ids.json`
+
+### 8.2 MongoDB
+
+用于：
+
+- 原始压力明细数据
+- 小程序实时状态查询
+
+关键集合：
+
+- `pressure_data`
+
+### 8.3 MySQL
+
+用于：
+
+- 用户注册与密码哈希
+- 用户设置
+- 每日统计
+- 排行榜
+
+关键表：
+
+- `users`
+- `user_daily_stats`
+
+## 9. 部署架构
+
+当前 Docker 部署以 `deploy/docker-compose.yml` 为主。
+
+默认角色：
+
+- `nginx`
+  - 入口代理
+  - 负责外部访问
+- `api`
+  - Flask 服务
+- `worker`
+  - Celery 异步处理
+- `redis`
+  - Broker 与缓存基础设施
+- `mysql`
+  - 小程序用户与统计数据
+
+部署结论：
+
+- 公网主要走 `nginx -> api -> worker`
+- Redis Stream Worker 不是默认 compose 自动启动项
+- Redis Stream 功能需要按需手动启停
+
+## 10. 模块化与扩展性说明
+
+老师如果问“是不是模块化、能不能独立启停、能不能扩容”，可以这样回答：
+
+1. 是模块化的
+   - 鉴权、接口、异步处理、模拟器、MQ Worker、数据存储都按目录拆分
+2. 可以独立启停部分模块
+   - `scripts/mq_manager.py` 支持单独启动 `validator`、`writer`、`logger`
+3. 可以扩容
+   - Celery Worker 支持 Docker 扩缩容
+   - Redis Stream Worker 支持多副本消费
+4. 主链路和扩展链路解耦
+   - 即使不启用 Redis Stream，主 API 链路也能正常运行
+
+## 11. 推荐阅读顺序
+
+第一次看项目，按这个顺序最容易理解：
+
+1. `docs/ARCHITECTURE.md`
+2. `docs/BACKEND_IMPLEMENTATION.md`
+3. `DOCUMENT_INDEX.md`
+4. `docs/API.md`
+5. `docs/MQ_TEST_GUIDE.md`
+
+## 12. 一句话总结
+
+Moon_Dance 当前是一个以 `Flask + Redis + Celery` 为云端主链路、以 `MySQL + MongoDB` 支撑小程序业务、以 `Redis Stream Worker` 作为扩展消息架构的模块化后端系统。

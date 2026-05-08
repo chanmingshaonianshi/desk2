@@ -1,6 +1,6 @@
 # MQ 测试操作指南
 
-本文档只保留测试步骤，不再重复架构背景。先读 `ARCHITECTURE.md` 和 `MQ_ARCHITECTURE.md`，再按这里操作。
+本文档只保留测试步骤，不再重复架构背景。先读 `ARCHITECTURE.md` 和 `BACKEND_IMPLEMENTATION.md`，再按这里操作。
 
 ## 一、先分清要测哪条链路
 

@@ -45,7 +45,8 @@ Moon_Dance/
   docs/
     README.txt（本文件）
     README_DOCKER.md（Docker 使用说明，细节参考本文件或该文件）
-    ARCHITECTURE.md（架构说明，细节参考本文件或该文件）
+    ARCHITECTURE.md（最新版总架构文档）
+    BACKEND_IMPLEMENTATION.md（后端实现说明，适合答辩讲解）
 
 
 3) 本地运行（模拟器）
@@ -122,4 +123,3 @@ Body(JSON) 必须包含：
 你在写入“本地计算机”根证书库时需要管理员权限。
 推荐使用当前用户证书库（无需管理员）：
   certutil -user -addstore -f ROOT "...\certs\ca.crt"
-
