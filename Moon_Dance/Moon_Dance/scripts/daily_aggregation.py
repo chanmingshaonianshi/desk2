@@ -279,6 +279,9 @@ def aggregate_daily_data(db, target_date=None):
                 # 查找关联用户
                 user = mysql_session.query(User).filter(
                     User.device_id == device_id
+                ).order_by(
+                    User.updated_at.desc(),
+                    User.id.desc()
                 ).first()
                 user_id = user.id if user else None
 

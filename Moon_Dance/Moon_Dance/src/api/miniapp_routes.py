@@ -120,6 +120,22 @@ def _resolve_user(session, user_id: str):
     return user
 
 
+def _unbind_device_from_other_users(session, device_id: str, current_user_id: int | None) -> None:
+    """确保同一个 device_id 只绑定到一个用户。"""
+    from src.utils.mysql_db import User
+
+    if not device_id:
+        return
+
+    query = session.query(User).filter(User.device_id == device_id)
+    if current_user_id is not None:
+        query = query.filter(User.id != current_user_id)
+
+    for other_user in query.all():
+        other_user.device_id = ""
+        other_user.updated_at = datetime.utcnow()
+
+
 def _ensure_user_access(requested_user_id: str):
     payload = getattr(g, "miniapp_jwt_payload", {})
     token_uid = str(payload.get("uid", "")).strip()
@@ -457,6 +473,7 @@ def register_user():
         data = request.get_json(silent=True) or {}
         openid = data.get("openid", "").strip()
         password = str(data.get("password", "")).strip()
+        device_id = str(data.get("device_id", "")).strip()
         if not openid:
             return _json_error("缺少 openid 参数，不要直接传微信 login code")
 
@@ -467,7 +484,9 @@ def register_user():
             # 更新已有用户
             user.nickname = data.get("nickname", user.nickname)
             user.avatar_url = data.get("avatar_url", user.avatar_url)
-            user.device_id = data.get("device_id", user.device_id)
+            if device_id:
+                _unbind_device_from_other_users(session, device_id, user.id)
+                user.device_id = device_id
             if password:
                 user.password_hash = generate_password_hash(password)
             elif not (user.password_hash or "").strip():
@@ -476,12 +495,13 @@ def register_user():
         else:
             if not password:
                 return _json_error("首次注册必须提供 password")
+            _unbind_device_from_other_users(session, device_id, None)
             # 创建新用户
             user = User(
                 openid=openid,
                 nickname=data.get("nickname", f"用户_{openid[-6:]}"),
                 avatar_url=data.get("avatar_url", ""),
-                device_id=data.get("device_id", ""),
+                device_id=device_id,
                 password_hash=generate_password_hash(password),
                 sedentary_threshold_min=45,
                 reminder_enabled=True,
