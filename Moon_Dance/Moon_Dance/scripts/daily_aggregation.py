@@ -60,7 +60,7 @@ def get_mysql_session():
         from src.utils.mysql_db import get_session
         return get_session()
     except Exception as e:
-        print(f"  ⚠️  MySQL 连接失败，将仅写入 MongoDB: {e}")
+        print(f"  [警告] MySQL 连接失败，将仅写入 MongoDB: {e}")
         return None
 
 
@@ -144,7 +144,7 @@ def aggregate_daily_data(db, target_date=None):
 
     date_str = target_date.strftime("%Y-%m-%d")
     print(f"\n{'='*60}")
-    print(f"  📊 开始汇总日期: {date_str}")
+    print(f"  [汇总] 开始汇总日期: {date_str}")
     print(f"{'='*60}")
 
     # ---- 计算当天的毫秒级时间戳范围 ----
@@ -205,10 +205,10 @@ def aggregate_daily_data(db, target_date=None):
     results = list(raw_col.aggregate(pipeline))
 
     if not results:
-        print(f"  ⚠️  {date_str} 没有找到任何原始数据，跳过汇总。")
+        print(f"  [警告] {date_str} 没有找到任何原始数据，跳过汇总。")
         return 0
 
-    print(f"  📡 找到 {len(results)} 个设备的数据，开始逐一计算...\n")
+    print(f"  [数据] 找到 {len(results)} 个设备的数据，开始逐一计算...\n")
 
     # 获取 MySQL Session
     mysql_session = get_mysql_session()
@@ -327,11 +327,11 @@ def aggregate_daily_data(db, target_date=None):
                 mysql_session.commit()
             except Exception as e:
                 mysql_session.rollback()
-                print(f"  ⚠️  [{device_id}] MySQL 写入失败: {e}")
+                print(f"  [警告] [{device_id}] MySQL 写入失败: {e}")
 
         count += 1
         compliance_info = f"提醒{reminders_total}次/合规{reminders_complied}次"
-        print(f"  ✅ [{device_id}] 入座 {total_seated_minutes} 分钟 | "
+        print(f"  [完成] [{device_id}] 入座 {total_seated_minutes} 分钟 | "
               f"不良姿势 {bad_count} 次 | "
               f"{compliance_info} | "
               f"健康评分 {health_score} 分")
@@ -339,17 +339,17 @@ def aggregate_daily_data(db, target_date=None):
     if mysql_session:
         mysql_session.close()
 
-    print(f"\n  🎉 汇总完成！共处理 {count} 个设备的数据。")
+    print(f"\n  [完成] 汇总完成！共处理 {count} 个设备的数据。")
     return count
 
 
 def ensure_indexes(db):
     """确保必要的索引存在（首次运行时自动创建）"""
-    print("  🔧 检查并创建 MongoDB 索引...")
+    print("  [初始化] 检查并创建 MongoDB 索引...")
 
     # pressure_data 索引
     raw_col = db["pressure_data"]
-    raw_col.create_index([(ASCENDING, ASCENDING), ("timestamp", ASCENDING)],
+    raw_col.create_index([("device_id", ASCENDING), ("timestamp", ASCENDING)],
                          name="idx_device_timestamp")
 
     # daily_stats 索引（兼容保留）
@@ -359,25 +359,25 @@ def ensure_indexes(db):
     daily_col.create_index([("device_id", ASCENDING), ("date", ASCENDING)],
                            unique=True, name="idx_device_date_unique")
 
-    print("  ✅ MongoDB 索引创建/验证完成。")
+    print("  [完成] MongoDB 索引创建/验证完成。")
 
     # MySQL 表初始化
     try:
         from src.utils.mysql_db import init_db
         init_db()
     except Exception as e:
-        print(f"  ⚠️  MySQL 表初始化失败（不影响 MongoDB 写入）: {e}")
+        print(f"  [警告] MySQL 表初始化失败（不影响 MongoDB 写入）: {e}")
 
 
 def run_daily_job():
     """定时任务入口：汇总昨天的数据"""
-    print(f"\n⏰ [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 定时任务触发")
+    print(f"\n[定时任务] [{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] 定时任务触发")
     try:
         db = get_db()
         ensure_indexes(db)
         aggregate_daily_data(db)
     except Exception as e:
-        print(f"  ❌ 定时任务执行失败: {e}")
+        print(f"  [错误] 定时任务执行失败: {e}")
         import traceback
         traceback.print_exc()
 
@@ -409,7 +409,7 @@ def main():
         try:
             from apscheduler.schedulers.blocking import BlockingScheduler
         except ImportError:
-            print("❌ 请先安装 APScheduler: pip install apscheduler")
+            print("[错误] 请先安装 APScheduler: pip install apscheduler")
             sys.exit(1)
 
         scheduler = BlockingScheduler()
@@ -420,19 +420,19 @@ def main():
                           replace_existing=True)
 
         print("=" * 60)
-        print("  🚀 每日汇总定时任务已启动")
-        print("  📅 执行时间: 每天 00:05")
-        print("  💡 按 Ctrl+C 退出")
+        print("  [启动] 每日汇总定时任务已启动")
+        print("  [时间] 执行时间: 每天 00:05")
+        print("  [提示] 按 Ctrl+C 退出")
         print("=" * 60)
 
         try:
             scheduler.start()
         except (KeyboardInterrupt, SystemExit):
-            print("\n  ⏹️ 定时任务已停止。")
+            print("\n  [停止] 定时任务已停止。")
 
     else:
         # 默认行为：立即执行一次
-        print("💡 提示: 使用 --daemon 参数可以启动定时守护进程模式")
+        print("[提示] 使用 --daemon 参数可以启动定时守护进程模式")
         print("         使用 --run-now 手动执行一次")
         print("         使用 --date YYYY-MM-DD 补跑指定日期\n")
         run_daily_job()

@@ -61,13 +61,13 @@ def ensure_initialized(max_retries: int = 10, retry_interval: float = 2.0) -> No
                 Base.metadata.create_all(bind=engine)
                 _ensure_schema_updates()
                 _init_done = True
-                print("[MySQL] ✅ 数据库表初始化完成（users, user_daily_stats）")
+                print("[MySQL] 数据库表初始化完成（users, user_daily_stats）")
                 return
             except Exception as exc:
                 last_error = exc
                 time.sleep(retry_interval)
 
-        print(f"[MySQL] ❌ 数据库表初始化失败: {last_error}")
+        print(f"[MySQL] 数据库表初始化失败: {last_error}")
         raise last_error
 
 
@@ -230,4 +230,3 @@ def check_connection():
         return True, "连接成功"
     except Exception as e:
         return False, str(e)
-
