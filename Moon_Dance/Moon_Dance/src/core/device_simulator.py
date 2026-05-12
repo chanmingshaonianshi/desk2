@@ -137,7 +137,7 @@ class DeviceSimulator:
                 encrypted_str = encrypt_payload(payload)
                 payload = {"encrypted_payload": encrypted_str}
                 # 为了演示效果，专门在控制台打印出一小段加密后的密文
-                print(f"[🔐安全传输] 正在发送强加密载荷 (前60位): {encrypted_str[:60]}...")
+                print(f"[安全传输] 正在发送强加密载荷 (前60位): {encrypted_str[:60]}...")
 
             headers = {"X-API-Key": self.api_key}
             if self.api_token:
