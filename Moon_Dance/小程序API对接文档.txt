@@ -49,7 +49,7 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
 - `POST /api/miniapp/user/register`
 - `POST /api/miniapp/user/login`
 - `GET /api/miniapp/device/<device_id>/realtime`
-- `GET /api/miniapp/user/<user_id>/stats`
+- `GET /api/miniapp/user/me/stats`（推荐）
 - `GET /api/miniapp/leaderboard`
 - `PUT /api/miniapp/user/<user_id>/settings`
 
@@ -141,10 +141,12 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
   - user: 当前用户信息
 
 权限规则：
+  - `/api/miniapp/user/me/stats`
   - `/api/miniapp/user/<user_id>/stats`
   - `/api/miniapp/user/<user_id>/settings`
-  以上两个接口只允许访问当前登录用户自己的数据。
-  也就是说，Token 里的用户身份必须和 URL 中的 user_id / openid 对应，否则返回 403。
+  以上接口只允许访问当前登录用户自己的数据。
+  其中 `/api/miniapp/user/me/stats` 会自动读取当前 Bearer Token 对应的用户，最适合前端直接对接。
+  如果使用 `/api/miniapp/user/<user_id>/stats`，则 Token 里的用户身份必须和 URL 中的 user_id / openid 对应，否则返回 403。
 
 ===============================================================
 二、数据库架构说明（双数据库）
@@ -233,7 +235,8 @@ MySQL（用户数据 & 关联关系）
 ---------------------------------------------------------------
 接口2: 获取个人历史统计
 ---------------------------------------------------------------
-路径:   GET /api/miniapp/user/<user_id>/stats
+推荐路径: GET /api/miniapp/user/me/stats
+兼容路径: GET /api/miniapp/user/<user_id>/stats
 数据源: MySQL
 鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
 
@@ -243,14 +246,18 @@ MySQL（用户数据 & 关联关系）
   end   (string, 可选)      — 结束日期 YYYY-MM-DD
   注: start+end 优先级高于 days
 
-user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
+说明：
+  - 推荐前端直接使用 `/api/miniapp/user/me/stats`
+  - 这样不需要前端自己维护 user_id，也不会因为账号切换或 user_id 过期触发 403
+  - 兼容路径 `/api/miniapp/user/<user_id>/stats` 仍然保留，方便后端调试和旧前端过渡
 
 请求示例:
   Header:
     X-API-Key: myh
     Authorization: Bearer <token>
-  GET /api/miniapp/user/wx_test_user_001/stats?days=7
-  GET /api/miniapp/user/1/stats?start=2026-04-20&end=2026-04-27
+  GET /api/miniapp/user/me/stats?days=7
+  GET /api/miniapp/user/me/stats?start=2026-04-20&end=2026-04-27
+  GET /api/miniapp/user/1/stats?days=7   （兼容旧写法，仅限调试）
 
 成功响应 (200):
 {
@@ -517,7 +524,7 @@ Body:
 }
 
 3. 带双重鉴权访问业务接口
-GET /api/miniapp/user/1/stats?days=7
+GET /api/miniapp/user/me/stats?days=7
 Header:
   X-API-Key: myh
   Authorization: Bearer <登录返回的 token>
