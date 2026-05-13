@@ -1,81 +1,53 @@
 #!/bin/bash
 
-set -euo pipefail
+set -e
 
 # =======================================================
 # 文件：deploy.sh
-# 实现了什么：服务器一键部署脚本。
-# 默认模式：git pull 后直接重建 api/worker/nginx 容器，不重新 build 镜像。
-# 重建模式：bash deploy.sh --rebuild，会关闭 BuildKit 并重新构建 api/worker 镜像。
-# 为什么这样做：当前 compose 已挂载宿主机源码到容器，日常 Python 代码更新不必重新构建镜像；
-# 只有 Dockerfile / requirements.txt / docker-compose.yml 变化时才需要完整重建。
+# 实现了什么：轻量级的一键自动化部署与集群平滑重启工具 (CI/CD 雏形)。
+# 怎么实现的：首先执行 git pull 拉取 GitHub 仓库的最新代码，接着通过 docker compose down 销毁当前运行的旧容器，随后执行 docker compose build 重新编译包含了最新代码的 Docker 镜像，最后执行 docker compose up -d 在后台拉起全新的微服务集群。
+# 为什么实现：代替重量级的 Jenkins（轻量级云服务器跑不动），让开发者可以告别繁琐易错的手动部署命令。每次修改完代码推送到 Git 后，在服务器上只需运行此脚本即可完成系统热更新。
 # =======================================================
 
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-APP_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-REPO_ROOT="$(cd "$APP_DIR/.." && pwd)"
-REBUILD_MODE="${1:-}"
+# 切换到脚本所在目录，确保 docker-compose 命令能找到 yml 文件
+cd "$(dirname "$0")"
 
 echo "======================================================="
-echo " [1/4] 清理服务器运行时文件并拉取最新代码..."
+echo " [1/4] 正在从 GitHub 仓库拉取最新代码..."
 echo "======================================================="
-cd "$REPO_ROOT"
-
-# 这些文件/目录是服务运行时产生的，不能阻塞 git pull
-git restore --staged Moon_Dance/data/realtime_logs/realtime_log.jsonl 2>/dev/null || true
-git restore Moon_Dance/data/realtime_logs/realtime_log.jsonl 2>/dev/null || true
-git restore --staged Moon_Dance/data/history_data.json 2>/dev/null || true
-git restore Moon_Dance/data/history_data.json 2>/dev/null || true
-git clean -fd -- \
-  Moon_Dance/data/reports \
-  Moon_Dance/logs \
-  Moon_Dance/tmp \
-  data/realtime_logs \
-  logs \
-  tmp 2>/dev/null || true
-
+# 先暂存服务器本地运行时产生的修改（如实时日志 .jsonl），防止 git pull 因冲突中断
+# --quiet 避免"No local changes"时报错；|| true 保证脚本继续执行
+echo "  [提示] 暂存服务器运行时文件修改 (git stash)..."
+git stash --quiet || true
+# 强制拉取 main 分支的最新代码
 git pull origin main
+# 恢复暂存内容（运行时日志文件不影响代码逻辑，直接恢复即可）
+git stash pop --quiet || true
 
 echo ""
 echo "======================================================="
-echo " [2/4] 进入部署目录并准备更新服务..."
+echo " [2/4] 正在安全停止当前运行的后端集群..."
 echo "======================================================="
-cd "$SCRIPT_DIR"
+# 停止 Nginx, Flask APIs, Redis, Celery Worker 等所有服务
+docker compose down
 
-if [[ "$REBUILD_MODE" == "--rebuild" ]]; then
-  echo ""
-  echo "======================================================="
-  echo " [3/4] 完整重建镜像（关闭 BuildKit，避免元数据拉取失败）..."
-  echo "======================================================="
-  export DOCKER_BUILDKIT=0
-  export COMPOSE_DOCKER_CLI_BUILD=0
-  docker compose build api worker
+echo ""
+echo "======================================================="
+echo " [3/4] 正在重新构建 Docker 镜像以应用最新代码..."
+echo "======================================================="
+# 重新编译 api 和 worker 的镜像
+docker compose build
 
-  echo ""
-  echo "======================================================="
-  echo " [4/4] 启动最新服务集群..."
-  echo "======================================================="
-  docker compose up -d api worker nginx
-else
-  echo ""
-  echo "======================================================="
-  echo " [3/4] 快速部署：复用现有镜像并强制重建容器..."
-  echo "======================================================="
-  docker compose up -d --no-build --force-recreate api worker nginx
+echo ""
+echo "======================================================="
+echo " [4/4] 正在以后台模式启动全新集群 (扩容 3 个 API 节点)..."
+echo "======================================================="
+# 启动整个架构
+docker compose up -d
 
-  echo ""
-  echo "======================================================="
-  echo " [4/4] 验证服务状态..."
-  echo "======================================================="
-fi
-
+echo ""
+echo "======================================================="
+echo " ✅ 部署完成！最新版本的代码已在服务器上成功运行！"
+echo " 可以使用 'docker ps' 查看集群运行状态。"
+echo "======================================================="
 docker compose ps
-echo ""
-echo "[健康检查] http://127.0.0.1:8000/health"
-curl -fsS http://127.0.0.1:8000/health || true
-echo ""
-echo "======================================================="
-echo " ✅ 部署完成。"
-echo " 默认使用: bash deploy.sh"
-echo " 依赖变更时: bash deploy.sh --rebuild"
-echo "======================================================="

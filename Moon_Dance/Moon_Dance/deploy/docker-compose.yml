@@ -84,7 +84,6 @@ services:
           memory: 256M
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - PYTHONDONTWRITEBYTECODE=1
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - API_USE_SSL=0
@@ -93,7 +92,6 @@ services:
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
       - MYSQL_URI=mysql+pymysql://root:MySql%402026Ab@mysql:3306/moondance?charset=utf8mb4
     volumes:
-      - ..:/app:ro
       - api_data:/app/data
       - ../certs:/app/certs:ro
     expose:
@@ -115,11 +113,9 @@ services:
     command: celery -A src.core.worker worker --loglevel=info --concurrency=4
     environment:
       - REDIS_URL=redis://redis:6379/0
-      - PYTHONDONTWRITEBYTECODE=1
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
       - MYSQL_URI=mysql+pymysql://root:MySql%402026Ab@mysql:3306/moondance?charset=utf8mb4
     volumes:
-      - ..:/app:ro
       - api_data:/app/data
     depends_on:
       redis:

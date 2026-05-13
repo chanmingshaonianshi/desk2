@@ -249,17 +249,6 @@ def get_device_realtime(device_id: str):
 # GET /api/miniapp/user/<user_id>/stats
 # 支持查询参数: ?days=7 (默认7天) / ?start=2026-04-20&end=2026-04-27
 # ============================================================
-@miniapp_bp.get("/user/me/stats")
-@miniapp_dual_auth_required
-def get_my_stats():
-    """获取当前登录用户的历史统计数据（推荐：避免前端误用 user_id 导致 403）。"""
-    payload = getattr(g, "miniapp_jwt_payload", {})
-    uid = payload.get("uid")
-    if not uid:
-        return _json_error("Token 无效", 401)
-    return get_user_stats(str(uid))
-
-
 @miniapp_bp.get("/user/<user_id>/stats")
 @miniapp_dual_auth_required
 def get_user_stats(user_id: str):
