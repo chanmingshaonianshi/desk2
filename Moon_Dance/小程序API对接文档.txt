@@ -120,6 +120,7 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
   - 以下接口必须同时带上两种请求头：
     · GET /api/miniapp/device/<device_id>/realtime
     · GET /api/miniapp/user/<user_id>/stats
+    · GET /api/miniapp/user/me/stats（推荐：无需传 user_id，避免 403）
     · GET /api/miniapp/leaderboard
     · PUT /api/miniapp/user/<user_id>/settings
 
