@@ -393,16 +393,19 @@ cd ~/desk2/Moon_Dance/Moon_Dance && python3 test_mongo.py
 # 3) 一键查看 MongoDB 全部信息（压力明细数据 + 兼容统计）
 cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/mongo_check.py
 
-# 4) 手动执行每日数据汇总（双写聚合：MongoDB 明细 -> MySQL + MongoDB 统计）
+# 4) 手动执行每日数据汇总（推荐：在 api 容器内执行，依赖最完整）
 # 注意：该脚本会自动根据最新的"坐姿质量+久坐合规"双因素算法生成 0-100 分健康评分
-cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --run-now
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb api
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python3 scripts/daily_aggregation.py --run-now
 
 # 5) 手动补跑指定日期的汇总（把日期替换成你压测当天的日期）
-cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --date 2026-04-27
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb api
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python3 scripts/daily_aggregation.py --run-now --date 2026-04-27
 
-# 6) 启动每日汇总定时任务守护进程（后台常驻，凌晨 00:05 自动执行）
-# 提示：演示时可以不启动，手动 --run-now 即可展示效果
-cd ~/desk2/Moon_Dance/Moon_Dance && python3 scripts/daily_aggregation.py --daemon
+# 6) 如果报错 "mongodb:27017 Temporary failure in name resolution"
+# 说明 mongodb 服务没拉起或 api 容器没拿到依赖网络，先执行下面两条再重试：
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose restart api worker
 
 # ----------------------------------------------------------
 # 服务器端：小程序 API 接口验证（通过已运行的 Docker 集群测试）

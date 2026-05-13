@@ -27,6 +27,11 @@ services:
       - "27017:27017"
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping').ok"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
     networks:
       - moondance-net
 
@@ -99,6 +104,8 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+      mongodb:
+        condition: service_healthy
       mysql:
         condition: service_healthy
     networks:
@@ -119,6 +126,8 @@ services:
       - api_data:/app/data
     depends_on:
       redis:
+        condition: service_healthy
+      mongodb:
         condition: service_healthy
       mysql:
         condition: service_healthy
