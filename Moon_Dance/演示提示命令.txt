@@ -485,6 +485,84 @@ curl -k -sS "$API_BASE/api/miniapp/leaderboard?date=$QUERY_DATE&limit=10" \
 # - 前端取值是否读取了 res.data.data.summary 和 res.data.data.daily_records
 # - 汇总日期 QUERY_DATE 是否就是你刚刚产生日志的当天
 
+# ==========================================================
+# 一键全量验证：1 号用户（输出小程序全部页面所需数据）
+# 目标：让你把输出直接发给前端同学，对照检查“请求路径/取值字段/日期/权限”
+# ==========================================================
+cd ~/desk2/Moon_Dance/Moon_Dance
+
+API_BASE="https://www.myhjmycjh.tech"
+OPENID="test_openid_001"
+PASSWORD="123456"
+DEVICE_ID="device_001"
+EXPECTED_USER_ID="1"
+
+echo "== 1) 登录 1 号用户，获取 token + user_id =="
+LOGIN_JSON=$(curl -k -sS -X POST "$API_BASE/api/miniapp/user/login" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: myh" \
+  -d "{\"openid\":\"$OPENID\",\"password\":\"$PASSWORD\"}")
+
+echo "$LOGIN_JSON" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+TOKEN=$(printf '%s' "$LOGIN_JSON" | python3 -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('token',''))")
+USER_ID=$(printf '%s' "$LOGIN_JSON" | python3 -c "import sys,json; print(str(((json.load(sys.stdin).get('data') or {}).get('user') or {}).get('id','')).strip())")
+
+echo "TOKEN长度: ${#TOKEN}"
+echo "LOGIN返回 user_id: $USER_ID (期望: $EXPECTED_USER_ID)"
+
+echo
+echo "== 2) 实时坐姿（首页 realtime）=="
+REALTIME=$(curl -k -sS "$API_BASE/api/miniapp/device/$DEVICE_ID/realtime" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN")
+echo "$REALTIME" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+LAST_MS=$(printf '%s' "$REALTIME" | python3 -c "import sys,json; print(int(json.loads(sys.stdin.read())['data']['last_update_ms']))")
+DATA_DATE=$(python3 -c "import sys; from datetime import datetime; ms=int(sys.argv[1]); print(datetime.fromtimestamp(ms/1000).strftime('%Y-%m-%d'))" "$LAST_MS")
+echo "realtime.last_update_ms=$LAST_MS  -> 推导日期=$DATA_DATE"
+
+echo
+echo "== 3) 先补跑当日汇总（生成 stats / leaderboard 所需 MySQL 数据）=="
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy
+docker compose up -d mongodb mysql api >/dev/null 2>&1 || true
+docker compose exec api python3 scripts/daily_aggregation.py --run-now --date "$DATA_DATE"
+cd ~/desk2/Moon_Dance/Moon_Dance
+
+echo
+echo "== 4) 历史明细（history，围绕 realtime 时间戳往前 6 小时）=="
+START_MS=$((LAST_MS-6*3600000))
+END_MS=$LAST_MS
+curl -k -sS "$API_BASE/api/miniapp/device/$DEVICE_ID/history?start_ms=$START_MS&end_ms=$END_MS&limit=300" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "== 5) 评分统计（stats，当天 start/end）=="
+curl -k -sS "$API_BASE/api/miniapp/user/$USER_ID/stats?start=$DATA_DATE&end=$DATA_DATE" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "== 6) 评分趋势（stats，days=7）=="
+curl -k -sS "$API_BASE/api/miniapp/user/$USER_ID/stats?days=7" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "== 7) 排行榜（leaderboard，当天 date）=="
+curl -k -sS "$API_BASE/api/miniapp/leaderboard?date=$DATA_DATE&limit=10" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "== 8) 当前用户信息（用于\"我的\"页展示：device_id/settings/昵称等）=="
+printf '%s' "$LOGIN_JSON" | python3 -c 'import sys,json; print(json.dumps(((json.load(sys.stdin).get("data") or {}).get("user") or {}), indent=2, ensure_ascii=False))'
+
 # ----------------------------------------------------------
 # 本地 PowerShell 版（如果你本地也装了 MongoDB 且有数据）
 # ----------------------------------------------------------
