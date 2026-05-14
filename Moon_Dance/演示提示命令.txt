@@ -412,29 +412,78 @@ cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose restart api worker
 
 # ----------------------------------------------------------
-# 服务器端：小程序 API 接口验证（通过已运行的 Docker 集群测试）
-# 讲解词："因为我们升级了双数据库架构，现在小程序的接口职责划分非常清晰。
-# 实时姿态查询依然走查询最快的 MongoDB，而用户注册、历史统计、排行榜等
-# 强关联关系数据则全部由后端的 MySQL 承载。这是实际的接口调用效果："
+# 最新版：验证"产生日志 -> 汇总 -> 实时/历史/统计/排行榜"全链路
+# 说明：
+# 1) 第一步在你的本地 Windows 电脑上执行，用 simulator_client 产生原始数据
+# 2) 第二步以后在云服务器 Ubuntu/bash 上执行
+# 3) 当前示例按 1 号用户（openid=test_openid_001, user_id=1）验证
 # ----------------------------------------------------------
 
-# 注册一个测试用户并绑定设备
-curl -sk -X POST https://localhost/api/miniapp/user/register -H 'Content-Type: application/json' -d '{"openid":"wx_test_user_001","nickname":"测试用户A","device_id":"device_001"}' | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+# [本地 Windows / PowerShell] 先产生模拟数据（直传云端）
+cd 'b:\python\Moon_Dance(2)\Moon_Dance\Moon_Dance'
+python simulator_client.py --device-count 3 --duration 60 --interval 1 --api-url https://www.myhjmycjh.tech/api/v2/ingest --no-mq
 
-# 获取设备实时坐姿状态
-curl -sk https://localhost/api/miniapp/device/device_001/realtime | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+# [服务器 Ubuntu / bash] 进入项目目录
+cd ~/desk2/Moon_Dance/Moon_Dance
 
-# 获取用户最近 7 天历史统计
-curl -sk 'https://localhost/api/miniapp/user/wx_test_user_001/stats?days=7' | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+# 1) 重新绑定 1 号用户到 1 号设备（保证 stats 与前端账号一致）
+curl -k -sS -X POST "https://www.myhjmycjh.tech/api/miniapp/user/register" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: myh" \
+  -d '{"openid":"test_openid_001","nickname":"测试用户","device_id":"device_001","password":"123456"}' \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
 
-# 获取今日排行榜 TOP 10
-curl -sk https://localhost/api/miniapp/leaderboard | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+# 2) 先拉起 MongoDB 和 API，再补跑当天汇总（把日期换成你当前测试日期）
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb api
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python3 scripts/daily_aggregation.py --run-now --date 2026-05-12
 
-# 获取指定日期的排行榜 (例如 2026-04-27)
-curl -sk 'https://localhost/api/miniapp/leaderboard?date=2026-04-27&limit=10' | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+# 3) 登录 1 号用户并自动提取 Bearer Token
+cd ~/desk2/Moon_Dance/Moon_Dance
+API_BASE="https://www.myhjmycjh.tech"
+OPENID="test_openid_001"
+PASSWORD="123456"
+USER_ID="1"
+DEVICE_ID="device_001"
+QUERY_DATE="2026-05-12"
 
-# 更新用户设置（久坐提醒阈值改为 30 分钟）
-curl -sk -X PUT https://localhost/api/miniapp/user/wx_test_user_001/settings -H 'Content-Type: application/json' -d '{"sedentary_threshold_min":30,"reminder_enabled":true}' | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=4, ensure_ascii=False))'
+LOGIN_JSON=$(curl -k -sS -X POST "$API_BASE/api/miniapp/user/login" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: myh" \
+  -d "{\"openid\":\"$OPENID\",\"password\":\"$PASSWORD\"}")
+echo "$LOGIN_JSON"
+
+TOKEN=$(printf '%s' "$LOGIN_JSON" | python3 -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('token',''))")
+echo "TOKEN长度: ${#TOKEN}"
+
+# 4) 验证实时坐姿数据（前端首页）
+curl -k -sS "$API_BASE/api/miniapp/device/$DEVICE_ID/realtime" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+# 5) 验证历史明细数据（前端历史曲线）
+curl -k -sS "$API_BASE/api/miniapp/device/$DEVICE_ID/history?hours=24&limit=300" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+# 6) 验证评分统计数据（前端统计页）
+curl -k -sS "$API_BASE/api/miniapp/user/$USER_ID/stats?days=7" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+# 7) 验证排行榜数据（前端排行榜页）
+curl -k -sS "$API_BASE/api/miniapp/leaderboard?date=$QUERY_DATE&limit=10" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+# 8) 如果前端说"统计还是没有"，优先看这几个点：
+# - 登录返回里的 user.id 是否真的是 1
+# - 前端请求路径是否是 /api/miniapp/user/1/stats
+# - 前端取值是否读取了 res.data.data.summary 和 res.data.data.daily_records
+# - 汇总日期 QUERY_DATE 是否就是你刚刚产生日志的当天
 
 # ----------------------------------------------------------
 # 本地 PowerShell 版（如果你本地也装了 MongoDB 且有数据）
