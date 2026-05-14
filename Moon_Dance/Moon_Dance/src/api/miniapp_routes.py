@@ -159,6 +159,26 @@ def _ensure_user_access(requested_user_id: str):
     return None
 
 
+def _is_debug_enabled() -> bool:
+    return str(os.getenv("MINIAPP_DEBUG_BINDINGS", "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _is_admin_uid(uid: str) -> bool:
+    allowed = str(os.getenv("MINIAPP_ADMIN_UIDS", "1")).strip()
+    allowed_set = {s.strip() for s in allowed.split(",") if s.strip()}
+    return uid.strip() in allowed_set
+
+
+def _ensure_debug_admin():
+    if not _is_debug_enabled():
+        return _json_error("Not Found", 404)
+    payload = getattr(g, "miniapp_jwt_payload", {})
+    token_uid = str(payload.get("uid", "")).strip()
+    if not token_uid or not _is_admin_uid(token_uid):
+        return _json_error("无权访问", 403)
+    return None
+
+
 # ============================================================
 # API 1: 获取设备实时状态（数据源：MongoDB）
 # GET /api/miniapp/device/<device_id>/realtime
@@ -393,6 +413,45 @@ def get_device_history(device_id: str):
         return _json_error(str(exc))
     except Exception as e:
         return _json_error(f"查询设备历史数据失败: {str(e)}", 500)
+
+
+@miniapp_bp.get("/debug/bindings")
+@miniapp_dual_auth_required
+def debug_bindings():
+    session = None
+    try:
+        auth_error = _ensure_debug_admin()
+        if auth_error:
+            return auth_error
+
+        from src.utils.mysql_db import User
+
+        session = _get_mysql_session()
+        users = session.query(User).filter(User.device_id != "").order_by(User.updated_at.desc()).limit(500).all()
+        bindings = []
+        device_counts = {}
+        for u in users:
+            did = str(getattr(u, "device_id", "") or "").strip()
+            device_counts[did] = device_counts.get(did, 0) + 1
+            bindings.append({
+                "user_id": int(getattr(u, "id", 0) or 0),
+                "nickname": str(getattr(u, "nickname", "") or ""),
+                "device_id": did,
+                "updated_at": getattr(u, "updated_at", None).isoformat() if getattr(u, "updated_at", None) else "",
+            })
+
+        duplicates = [{"device_id": did, "count": cnt} for did, cnt in device_counts.items() if did and cnt > 1]
+        result = {
+            "total_bindings": len(bindings),
+            "bindings": bindings,
+            "duplicate_devices": duplicates,
+        }
+        return _json_ok(result)
+    except Exception as e:
+        return _json_error(f"查询绑定关系失败: {str(e)}", 500)
+    finally:
+        if session is not None:
+            session.close()
 
 
 # ============================================================
