@@ -323,6 +323,21 @@ def get_device_history(device_id: str):
                 "records": [],
             }, "success")
 
+        seen_keys = set()
+        deduped_records = []
+        for doc in records:
+            timestamp_ms = int(doc.get("timestamp", 0) or 0)
+            request_id = str(doc.get("request_id", "") or "").strip()
+            if request_id:
+                dedup_key = (timestamp_ms, request_id)
+            else:
+                dedup_key = (timestamp_ms, str(doc.get("_id", "") or ""))
+            if dedup_key in seen_keys:
+                continue
+            seen_keys.add(dedup_key)
+            deduped_records.append(doc)
+
+        records = deduped_records
         records.reverse()
 
         serialized_records = []
