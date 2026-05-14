@@ -41,6 +41,15 @@
 
 ## 4. 前端对应接口
 
+### 4.0 鉴权规则（必须统一实现）
+
+- `POST /api/miniapp/user/register`、`POST /api/miniapp/user/login`
+  - 只需要：`X-API-Key: myh`
+- 其余业务接口（`realtime/history/stats/leaderboard/settings`）
+  - 必须同时携带：
+    - `X-API-Key: myh`
+    - `Authorization: Bearer <token>`
+
 ### 4.1 注册
 
 - `POST /api/miniapp/user/register`
@@ -65,6 +74,12 @@
 
 - `GET /api/miniapp/user/<user_id>/stats`
 - 用途：画健康评分趋势图、展示汇总卡片和每日详情
+
+约束：
+
+- `<user_id>` 必须使用登录接口返回的 `user.id`（或 openid）
+- 不支持 `/api/miniapp/user/me/stats` 这类占位写法
+- 若 `user_id` 与 token 所属用户不一致，会返回 403（无权访问）
 
 ### 4.6 排行榜
 
@@ -188,6 +203,8 @@
 - 当前登录用户 id 是否和 stats 路径一致
 - 是否补跑了 `daily_aggregation.py`
 - 前端是否读取了 `res.data.data.daily_records`
+- 是否把 `stats` 的 `user_id` 写死成了 1（应使用登录返回的 `user.id`）
+- 若后端返回 `403 无权访问`，说明 token 用户与 URL 中 user_id 不一致
 
 ### 8.2 接口成功了，但页面空白
 
@@ -196,8 +213,23 @@
 - 页面 JS 是否有运行时错误
 - 图表组件是否还是占位组件
 - 是否把 `res.data.data.xxx` 写成了 `res.data.xxx`
+- `daily_records` 可能少于 7 天，前端应允许“数据不足也能画图/能显示汇总卡片”
+
+### 8.3 history 为空但 realtime 有数据
+
+常见原因：
+
+- `history` 默认查最近 24 小时，而你设备最近一条数据可能早于 24 小时窗口
+- 前端请求参数过大导致超时，建议先用 `hours=1&limit=50` 验证
+- MongoDB 库名与环境不一致导致查询不到（以服务端 `MONGO_DB_NAME` 配置为准）
 
 ### 8.3 看到了 `gAAAAA...`
 
 说明前端读错了上传接口的密文，不是小程序接口返回值。
 小程序只应该读取 `/api/miniapp/*`。
+
+## 9. 联调命令入口
+
+完整的“产生日志 -> 汇总 -> 实时/历史/统计/排行榜”一键验证命令，见：
+
+- `Moon_Dance/演示提示命令.txt`
