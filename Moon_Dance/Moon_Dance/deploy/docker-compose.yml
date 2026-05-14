@@ -76,6 +76,8 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
     restart: always
     command: python3 -u main_api.py --host 0.0.0.0 --port 8000 --no-ssl
     deploy:
@@ -116,6 +118,8 @@ services:
     build:
       context: ..
       dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
     restart: always
     command: celery -A src.core.worker worker --loglevel=info --concurrency=4
     environment:

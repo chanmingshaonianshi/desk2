@@ -1,5 +1,7 @@
-# 使用官方 Python 3.9 轻量版镜像
-FROM python:3.9-slim
+# 使用可配置的 Python 基础镜像。
+# 默认走国内可达镜像代理，服务器如果网络正常也可覆盖回官方镜像。
+ARG PYTHON_BASE_IMAGE=docker.m.daocloud.io/library/python:3.9-slim
+FROM ${PYTHON_BASE_IMAGE}
 
 # 设置容器内的工作目录
 WORKDIR /app
