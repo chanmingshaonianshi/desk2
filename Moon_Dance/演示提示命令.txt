@@ -486,6 +486,30 @@ curl -k -sS "$API_BASE/api/miniapp/leaderboard?date=$QUERY_DATE&limit=10" \
 # - 汇总日期 QUERY_DATE 是否就是你刚刚产生日志的当天
 
 # ==========================================================
+# 用户-设备绑定关系速查（给前端看：谁绑定了 device_001？device_001 当前归属谁？）
+# ==========================================================
+# 说明：
+# - users.device_id 记录“该用户当前绑定的设备”
+# - 同一个 device_id 在当前版本中应只归属一个用户（若出现多个，属于脏数据/未清理）
+
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy
+
+echo "== A) 所有已绑定设备的用户（user -> device）=="
+docker compose exec mysql mysql -uroot -pMySql@2026Ab -D moondance -e "select id as user_id, openid, nickname, device_id, updated_at from users where device_id <> '' order by updated_at desc limit 200;"
+
+echo
+echo "== B) device_001 当前绑定给谁（device -> user）=="
+docker compose exec mysql mysql -uroot -pMySql@2026Ab -D moondance -e "select id as user_id, openid, nickname, device_id, updated_at from users where device_id='device_001';"
+
+echo
+echo "== C) 最近哪些用户有统计数据（user_daily_stats 行数）=="
+docker compose exec mysql mysql -uroot -pMySql@2026Ab -D moondance -e "select user_id, count(*) as cnt, min(date) as first_date, max(date) as last_date from user_daily_stats where user_id is not null group by user_id order by cnt desc limit 50;"
+
+echo
+echo "== D) 最近 30 条统计明细（用于核对某天数据落到哪个用户）=="
+docker compose exec mysql mysql -uroot -pMySql@2026Ab -D moondance -e "select user_id, device_id, date, health_score, total_seated_minutes, bad_posture_count from user_daily_stats where user_id is not null order by date desc, health_score desc limit 30;"
+
+# ==========================================================
 # 一键全量验证：1 号用户（输出小程序全部页面所需数据）
 # 目标：让你把输出直接发给前端同学，对照检查“请求路径/取值字段/日期/权限”
 # ==========================================================
