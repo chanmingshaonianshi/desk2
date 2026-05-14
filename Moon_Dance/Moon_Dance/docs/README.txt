@@ -47,6 +47,7 @@ Moon_Dance/
     README_DOCKER.md（Docker 使用说明，细节参考本文件或该文件）
     ARCHITECTURE.md（最新版总架构文档）
     BACKEND_IMPLEMENTATION.md（后端实现说明，适合答辩讲解）
+    MINIAPP_DEVELOPMENT.md（小程序功能、接口和代码结构说明）
 
 
 3) 本地运行（模拟器）

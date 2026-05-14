@@ -106,6 +106,19 @@ def _parse_bool_arg(value: Any, field_name: str) -> bool:
     raise ValueError(f"{field_name} 参数必须为布尔值")
 
 
+def _parse_int_arg(value: Any, field_name: str, default: int, min_value: int, max_value: int) -> int:
+    """解析整数参数并校验范围。"""
+    if value in (None, ""):
+        return default
+    try:
+        result = int(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field_name} 参数必须为整数") from exc
+    if result < min_value or result > max_value:
+        raise ValueError(f"{field_name} 参数范围必须在 {min_value}-{max_value} 之间")
+    return result
+
+
 def _resolve_user(session, user_id: str):
     from src.utils.mysql_db import User
 
@@ -245,7 +258,130 @@ def get_device_realtime(device_id: str):
 
 
 # ============================================================
-# API 2: 获取个人历史统计（数据源：MySQL）
+# API 2: 获取设备历史明细（数据源：MongoDB）
+# GET /api/miniapp/device/<device_id>/history
+# 支持查询参数: ?hours=24 / ?start_ms=...&end_ms=...&limit=300
+# ============================================================
+@miniapp_bp.get("/device/<device_id>/history")
+@miniapp_dual_auth_required
+def get_device_history(device_id: str):
+    """
+    获取指定设备的历史明细数据，用于前端绘制折线图/时间线。
+
+    返回数据：
+    - 查询时间范围
+    - 历史采样点列表（时间、左右压力、偏差率、坐姿状态）
+    - 简要统计信息（最大/最小压力、平均偏差）
+    """
+    try:
+        db = _get_mongo_db()
+        raw_col = db["pressure_data"]
+
+        hours = _parse_int_arg(request.args.get("hours"), "hours", default=24, min_value=1, max_value=168)
+        limit = _parse_int_arg(request.args.get("limit"), "limit", default=300, min_value=10, max_value=2000)
+
+        start_ms = request.args.get("start_ms")
+        end_ms = request.args.get("end_ms")
+
+        if start_ms or end_ms:
+            start_ms_int = _parse_int_arg(start_ms, "start_ms", default=0, min_value=0, max_value=9999999999999)
+            end_ms_int = _parse_int_arg(end_ms, "end_ms", default=int(time.time() * 1000), min_value=0, max_value=9999999999999)
+            if start_ms_int > end_ms_int:
+                return _json_error("start_ms 不能晚于 end_ms")
+        else:
+            end_ms_int = int(time.time() * 1000)
+            start_ms_int = end_ms_int - hours * 60 * 60 * 1000
+
+        records = list(raw_col.find(
+            {
+                "device_id": device_id,
+                "timestamp": {
+                    "$gte": start_ms_int,
+                    "$lte": end_ms_int,
+                },
+            },
+            sort=[("timestamp", DESCENDING)],
+            limit=limit,
+        ))
+
+        if not records:
+            return _json_ok({
+                "device_id": device_id,
+                "range": {
+                    "start_ms": start_ms_int,
+                    "end_ms": end_ms_int,
+                    "hours": hours,
+                },
+                "total_points": 0,
+                "summary": {
+                    "avg_deviation_ratio": 0,
+                    "max_left_force_n": 0,
+                    "max_right_force_n": 0,
+                    "min_left_force_n": 0,
+                    "min_right_force_n": 0,
+                },
+                "records": [],
+            }, "success")
+
+        records.reverse()
+
+        serialized_records = []
+        left_values = []
+        right_values = []
+        deviations = []
+
+        for doc in records:
+            sensors = doc.get("sensors", {})
+            analysis = doc.get("analysis", {})
+            timestamp_ms = int(doc.get("timestamp", 0))
+            left_force = float(sensors.get("left_force_n", 0) or 0)
+            right_force = float(sensors.get("right_force_n", 0) or 0)
+            deviation = float(analysis.get("deviation_ratio", 0) or 0)
+            posture_status = "bad" if abs(deviation) > 0.10 else "normal"
+
+            left_values.append(left_force)
+            right_values.append(right_force)
+            deviations.append(abs(deviation))
+
+            serialized_records.append({
+                "timestamp_ms": timestamp_ms,
+                "time_label": datetime.fromtimestamp(timestamp_ms / 1000).strftime("%m-%d %H:%M:%S"),
+                "left_force_n": round(left_force, 1),
+                "right_force_n": round(right_force, 1),
+                "deviation_ratio": round(deviation, 4),
+                "posture_status": posture_status,
+                "posture_label": "标准坐姿 ✅" if posture_status == "normal" else "不良坐姿 ⚠️",
+                "is_seated": bool(doc.get("is_seated", True)),
+            })
+
+        result = {
+            "device_id": device_id,
+            "range": {
+                "start_ms": start_ms_int,
+                "end_ms": end_ms_int,
+                "hours": hours,
+            },
+            "total_points": len(serialized_records),
+            "summary": {
+                "avg_deviation_ratio": round(sum(deviations) / len(deviations), 4),
+                "max_left_force_n": round(max(left_values), 1),
+                "max_right_force_n": round(max(right_values), 1),
+                "min_left_force_n": round(min(left_values), 1),
+                "min_right_force_n": round(min(right_values), 1),
+            },
+            "records": serialized_records,
+        }
+
+        return _json_ok(result)
+
+    except ValueError as exc:
+        return _json_error(str(exc))
+    except Exception as e:
+        return _json_error(f"查询设备历史数据失败: {str(e)}", 500)
+
+
+# ============================================================
+# API 3: 获取个人历史统计（数据源：MySQL）
 # GET /api/miniapp/user/<user_id>/stats
 # 支持查询参数: ?days=7 (默认7天) / ?start=2026-04-20&end=2026-04-27
 # ============================================================
@@ -353,7 +489,7 @@ def get_user_stats(user_id: str):
 
 
 # ============================================================
-# API 3: 获取排行榜数据（数据源：MySQL）
+# API 4: 获取排行榜数据（数据源：MySQL）
 # GET /api/miniapp/leaderboard
 # 支持查询参数: ?date=2026-04-27 (默认今天) / ?limit=10
 # ============================================================
@@ -443,7 +579,7 @@ def get_leaderboard():
 
 
 # ============================================================
-# API 4: 用户注册/更新（数据源：MySQL）
+# API 5: 用户注册/更新（数据源：MySQL）
 # POST /api/miniapp/user/register
 # ============================================================
 @miniapp_bp.post("/user/register")
@@ -562,7 +698,7 @@ def login_miniapp_user():
 
 
 # ============================================================
-# API 5: 更新用户设置（数据源：MySQL）
+# API 6: 更新用户设置（数据源：MySQL）
 # PUT /api/miniapp/user/<user_id>/settings
 # ============================================================
 @miniapp_bp.put("/user/<user_id>/settings")

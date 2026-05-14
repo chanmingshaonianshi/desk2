@@ -49,6 +49,7 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
 - `POST /api/miniapp/user/register`
 - `POST /api/miniapp/user/login`
 - `GET /api/miniapp/device/<device_id>/realtime`
+- `GET /api/miniapp/device/<device_id>/history`
 - `GET /api/miniapp/user/<user_id>/stats`
 - `GET /api/miniapp/leaderboard`
 - `PUT /api/miniapp/user/<user_id>/settings`
@@ -119,6 +120,7 @@ Moon_Dance 智能坐垫小程序 — 后端 API 接口对接文档
     只要求请求头带 `X-API-Key: myh`
   - 以下接口必须同时带上两种请求头：
     · GET /api/miniapp/device/<device_id>/realtime
+    · GET /api/miniapp/device/<device_id>/history
     · GET /api/miniapp/user/<user_id>/stats
     · GET /api/miniapp/leaderboard
     · PUT /api/miniapp/user/<user_id>/settings
@@ -230,7 +232,68 @@ MySQL（用户数据 & 关联关系）
   - continuous_seated_minutes 超过用户设置的阈值时触发久坐提醒
 
 ---------------------------------------------------------------
-接口2: 获取个人历史统计
+接口2: 获取设备历史明细
+---------------------------------------------------------------
+路径:   GET /api/miniapp/device/<device_id>/history
+数据源: MongoDB
+鉴权:   需要 `X-API-Key: myh` + `Authorization: Bearer <token>`
+
+查询参数:
+  hours    (int, 默认24)     — 查询最近 N 小时，范围 1~168
+  limit    (int, 默认300)    — 最多返回多少个采样点，范围 10~2000
+  start_ms (int, 可选)       — 起始毫秒时间戳
+  end_ms   (int, 可选)       — 结束毫秒时间戳
+  注: start_ms + end_ms 优先级高于 hours
+
+请求示例:
+  Header:
+    X-API-Key: myh
+    Authorization: Bearer <token>
+  GET /api/miniapp/device/device_001/history?hours=24&limit=300
+
+成功响应 (200):
+{
+    "ok": true,
+    "message": "success",
+    "data": {
+        "device_id": "device_001",
+        "range": {
+            "start_ms": 1746979200000,
+            "end_ms": 1747065600000,
+            "hours": 24
+        },
+        "total_points": 120,
+        "summary": {
+            "avg_deviation_ratio": 0.0842,
+            "max_left_force_n": 388.6,
+            "max_right_force_n": 397.1,
+            "min_left_force_n": 201.3,
+            "min_right_force_n": 208.5
+        },
+        "records": [
+            {
+                "timestamp_ms": 1747062000000,
+                "time_label": "05-12 14:20:00",
+                "left_force_n": 312.5,
+                "right_force_n": 286.4,
+                "deviation_ratio": 0.0436,
+                "posture_status": "normal",
+                "posture_label": "标准坐姿 ✅",
+                "is_seated": true
+            }
+        ]
+    }
+}
+
+前端对接要点:
+  - `records` 直接用于绘制左右压力历史折线图
+  - 横轴建议使用 `time_label`
+  - 纵轴建议使用 `left_force_n`、`right_force_n`
+  - `deviation_ratio`、`posture_status` 可用于标记异常时段
+  - 如果需要更精确的时间范围，优先传 `start_ms/end_ms`
+
+---------------------------------------------------------------
+接口3: 获取个人历史统计
 ---------------------------------------------------------------
 路径:   GET /api/miniapp/user/<user_id>/stats
 数据源: MySQL
@@ -296,7 +359,7 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
   - sedentary_compliance 可展示久坐合规统计
 
 ---------------------------------------------------------------
-接口3: 获取排行榜
+接口4: 获取排行榜
 ---------------------------------------------------------------
 路径:   GET /api/miniapp/leaderboard
 数据源: MySQL
@@ -346,7 +409,7 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
   - 可用 date 参数切换查看历史日期排行
 
 ---------------------------------------------------------------
-接口4: 用户注册/更新
+接口5: 用户注册/更新
 ---------------------------------------------------------------
 路径:   POST /api/miniapp/user/register
 数据源: MySQL
@@ -391,7 +454,7 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
   - 返回的 id 即为后续接口中的 user_id
 
 ---------------------------------------------------------------
-接口4-1: 用户登录
+接口5-1: 用户登录
 ---------------------------------------------------------------
 路径:   POST /api/miniapp/user/login
 数据源: MySQL
@@ -441,7 +504,7 @@ user_id 支持格式: MySQL 用户 id (整数) 或 openid (字符串)
   - 若收到 401，可重新登录获取新 token
 
 ---------------------------------------------------------------
-接口5: 更新用户设置
+接口6: 更新用户设置
 ---------------------------------------------------------------
 路径:   PUT /api/miniapp/user/<user_id>/settings
 数据源: MySQL
@@ -522,14 +585,80 @@ Header:
   Authorization: Bearer <登录返回的 token>
 
 ===============================================================
-六、已删除/暂不开发的功能
+六、联调终端命令（服务器 Ubuntu / Linux）
+===============================================================
+
+1. 登录 1 号用户并拿 token：
+TOKEN=$(curl -k -sS -X POST "https://www.myhjmycjh.tech/api/miniapp/user/login" -H "Content-Type: application/json" -H "X-API-Key: myh" -d '{"openid":"test_openid_001","password":"123456"}' | python3 -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('token',''))")
+echo "$TOKEN"
+
+2. 查询实时坐姿：
+curl -k -sS "https://www.myhjmycjh.tech/api/miniapp/device/device_001/realtime" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN"
+
+3. 查询历史明细（新增接口，画历史曲线用）：
+curl -k -sS "https://www.myhjmycjh.tech/api/miniapp/device/device_001/history?hours=24&limit=300" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN"
+
+4. 查询评分统计：
+curl -k -sS "https://www.myhjmycjh.tech/api/miniapp/user/1/stats?days=7" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN"
+
+5. 查询排行榜：
+curl -k -sS "https://www.myhjmycjh.tech/api/miniapp/leaderboard?date=2026-05-12&limit=10" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN"
+
+6. 如果评分统计或排行榜为空，先补跑当天汇总：
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose up -d mongodb api
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy && docker compose exec api python3 scripts/daily_aggregation.py --run-now --date 2026-05-12
+
+===============================================================
+七、评分数据仍收不到时，前端建议依次排查
+===============================================================
+
+1. 检查当前登录用户 id
+  - 请直接打印登录接口返回的 `data.user.id`
+  - 很多情况不是后端没数据，而是前端当前登录的是 user 20，却去查 user 1
+
+2. 检查 stats 请求路径
+  - 必须是 `/api/miniapp/user/<当前登录用户id>/stats`
+  - 不要把 `device_001` 当成 `user_id`
+
+3. 检查请求头
+  - 必须同时带：
+    · `X-API-Key: myh`
+    · `Authorization: Bearer <最新登录拿到的token>`
+
+4. 检查是否已补跑汇总
+  - `stats` 和 `leaderboard` 读的是 MySQL 每日汇总，不是原始实时明细
+  - 上传完模拟数据后，需要执行 `daily_aggregation.py --run-now --date <当天日期>`
+
+5. 检查前端取值路径
+  - `stats` 页面应读取：
+    · `res.data.data.summary.avg_health_score`
+    · `res.data.data.summary.total_seated_minutes`
+    · `res.data.data.summary.total_bad_posture_count`
+    · `res.data.data.daily_records`
+  - `leaderboard` 页面应读取：
+    · `res.data.data.leaderboard`
+
+6. 检查前端页面是否渲染报错
+  - 如果控制台里出现 `ReferenceError: categories is not defined` 等报错，说明接口已返回，但图表代码崩了
+  - 这时要先修前端 JS，再看接口
+
+===============================================================
+八、已删除/暂不开发的功能
 ===============================================================
 
 以下功能已明确移除，前端无需对接：
   ✗ 社交分享模块（日报/周报卡片生成、分享到微信朋友圈）
 
 ===============================================================
-七、前端开发建议
+九、前端开发建议
 ===============================================================
 
 1. 页面结构建议：

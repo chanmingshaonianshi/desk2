@@ -39,6 +39,7 @@
 小程序前端正常应调用的是以下查询接口：
 
 - `/api/miniapp/device/<device_id>/realtime`
+- `/api/miniapp/device/<device_id>/history`
 - `/api/miniapp/user/<user_id>/stats`
 - `/api/miniapp/leaderboard`
 - `/api/miniapp/user/<user_id>/settings`

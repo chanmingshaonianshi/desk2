@@ -176,6 +176,7 @@ main.py / simulator_client.py
 - `POST /api/miniapp/user/register`
 - `POST /api/miniapp/user/login`
 - `GET /api/miniapp/device/<device_id>/realtime`
+- `GET /api/miniapp/device/<device_id>/history`
 - `GET /api/miniapp/user/<user_id>/stats`
 - `GET /api/miniapp/leaderboard`
 - `PUT /api/miniapp/user/<user_id>/settings`
