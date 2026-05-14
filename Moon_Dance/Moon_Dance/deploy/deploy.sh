@@ -1,53 +1,92 @@
 #!/bin/bash
 
-set -e
+set -euo pipefail
 
 # =======================================================
 # 文件：deploy.sh
-# 实现了什么：轻量级的一键自动化部署与集群平滑重启工具 (CI/CD 雏形)。
-# 怎么实现的：首先执行 git pull 拉取 GitHub 仓库的最新代码，接着通过 docker compose down 销毁当前运行的旧容器，随后执行 docker compose build 重新编译包含了最新代码的 Docker 镜像，最后执行 docker compose up -d 在后台拉起全新的微服务集群。
-# 为什么实现：代替重量级的 Jenkins（轻量级云服务器跑不动），让开发者可以告别繁琐易错的手动部署命令。每次修改完代码推送到 Git 后，在服务器上只需运行此脚本即可完成系统热更新。
+# 实现了什么：服务器强制同步最新代码、保住正式证书、清理旧容器并完成一键重建部署。
+# 怎么实现的：先备份服务器本机证书，再中止残留 merge/rebase，随后 fetch + reset 到 origin/main；
+#           然后恢复正式证书、移除会抢占 80/443/8000 端口的旧容器，最后执行 docker compose down/build/up。
+# 为什么实现：服务器上常有运行时文件修改与历史冲突状态，直接 git pull 容易失败；此脚本专门为云服务器场景做了兜底。
 # =======================================================
 
-# 切换到脚本所在目录，确保 docker-compose 命令能找到 yml 文件
-cd "$(dirname "$0")"
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+CERT_DIR="$REPO_ROOT/certs"
+BACKUP_DIR="$(mktemp -d)"
+
+cleanup() {
+  rm -rf "$BACKUP_DIR"
+}
+
+trap cleanup EXIT
+
+backup_cert() {
+  local source_path="$1"
+  local backup_name="$2"
+  if [ -f "$source_path" ]; then
+    cp "$source_path" "$BACKUP_DIR/$backup_name"
+  fi
+}
+
+restore_cert() {
+  local backup_name="$1"
+  local target_path="$2"
+  if [ -f "$BACKUP_DIR/$backup_name" ]; then
+    mkdir -p "$(dirname "$target_path")"
+    cp "$BACKUP_DIR/$backup_name" "$target_path"
+  fi
+}
+
+# 切换到脚本所在目录，确保 docker compose 命令能找到 yml 文件
+cd "$SCRIPT_DIR"
 
 echo "======================================================="
-echo " [1/4] 正在从 GitHub 仓库拉取最新代码..."
+echo " [1/5] 正在备份服务器正式证书..."
 echo "======================================================="
-# 先暂存服务器本地运行时产生的修改（如实时日志 .jsonl），防止 git pull 因冲突中断
-# --quiet 避免"No local changes"时报错；|| true 保证脚本继续执行
-echo "  [提示] 暂存服务器运行时文件修改 (git stash)..."
-git stash --quiet || true
-# 强制拉取 main 分支的最新代码
-git pull origin main
-# 恢复暂存内容（运行时日志文件不影响代码逻辑，直接恢复即可）
-git stash pop --quiet || true
+backup_cert "$CERT_DIR/server.crt" "server.crt"
+backup_cert "$CERT_DIR/server.key" "server.key"
+backup_cert "$HOME/server.crt" "server.crt"
+backup_cert "$HOME/server.key" "server.key"
 
 echo ""
 echo "======================================================="
-echo " [2/4] 正在安全停止当前运行的后端集群..."
+echo " [2/5] 正在强制同步 GitHub 最新代码..."
 echo "======================================================="
-# 停止 Nginx, Flask APIs, Redis, Celery Worker 等所有服务
+cd "$REPO_ROOT"
+git merge --abort 2>/dev/null || true
+git rebase --abort 2>/dev/null || true
+git cherry-pick --abort 2>/dev/null || true
+git fetch origin main
+git reset --hard origin/main
+
+echo ""
+echo "======================================================="
+echo " [3/5] 正在恢复正式证书并清理旧容器..."
+echo "======================================================="
+restore_cert "server.crt" "$CERT_DIR/server.crt"
+restore_cert "server.key" "$CERT_DIR/server.key"
+if [ -f "$CERT_DIR/server.key" ]; then
+  chmod 600 "$CERT_DIR/server.key"
+fi
+docker rm -f nginx-ssl moondance-api >/dev/null 2>&1 || true
+
+echo ""
+echo "======================================================="
+echo " [4/5] 正在安全停止当前运行的后端集群..."
+echo "======================================================="
 docker compose down
 
 echo ""
 echo "======================================================="
-echo " [3/4] 正在重新构建 Docker 镜像以应用最新代码..."
+echo " [5/5] 正在重新构建并启动全新集群..."
 echo "======================================================="
-# 重新编译 api 和 worker 的镜像
 docker compose build
+docker compose up -d --force-recreate
 
 echo ""
 echo "======================================================="
-echo " [4/4] 正在以后台模式启动全新集群 (扩容 3 个 API 节点)..."
-echo "======================================================="
-# 启动整个架构
-docker compose up -d
-
-echo ""
-echo "======================================================="
-echo " ✅ 部署完成！最新版本的代码已在服务器上成功运行！"
-echo " 可以使用 'docker ps' 查看集群运行状态。"
+echo " ✅ 部署完成！服务器已同步到 GitHub 最新版本。"
+echo " 已自动保留证书，并重建当前 Docker 集群。"
 echo "======================================================="
 docker compose ps
