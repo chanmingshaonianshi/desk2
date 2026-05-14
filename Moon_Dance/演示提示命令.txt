@@ -587,6 +587,98 @@ echo
 echo "== 8) 当前用户信息（用于\"我的\"页展示：device_id/settings/昵称等）=="
 printf '%s' "$LOGIN_JSON" | python3 -c 'import sys,json; print(json.dumps(((json.load(sys.stdin).get("data") or {}).get("user") or {}), indent=2, ensure_ascii=False))'
 
+# ==========================================================
+# 一口气发出所有数据（模拟上报 + 汇总 + 小程序接口全验证）
+#
+# 你只需要改这几个变量：
+# - OPENID/PASSWORD：决定“哪个用户”
+# - BIND_DEVICE_ID：决定“这个用户绑定哪台设备”
+# - SIM_DEVICE_COUNT：决定“模拟器会上报哪些设备（device_001..device_00N）”
+# - CHECK_DEVICE_ID：决定“你要用小程序接口查看哪台设备的数据”
+# ==========================================================
+cd ~/desk2/Moon_Dance/Moon_Dance
+
+API_BASE="https://www.myhjmycjh.tech"
+OPENID="0e1f2zFa1Dx4IL0KiUFa1ZKLVZ1f2zFf"
+PASSWORD="123456"
+BIND_DEVICE_ID="device_001"
+SIM_DEVICE_COUNT=2
+SIM_DURATION=60
+SIM_INTERVAL=1
+CHECK_DEVICE_ID="device_001"
+
+echo "== 0) 绑定设备到当前用户（register/upsert；改 device_id 就是在改绑定）=="
+curl -k -sS -X POST "$API_BASE/api/miniapp/user/register" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: myh" \
+  -d "{\"openid\":\"$OPENID\",\"nickname\":\"联调用户\",\"device_id\":\"$BIND_DEVICE_ID\",\"password\":\"$PASSWORD\"}" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "== 1) 登录拿 token + user_id（后续 stats/settings 必须用这个 user_id）=="
+LOGIN_JSON=$(curl -k -sS -X POST "$API_BASE/api/miniapp/user/login" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: myh" \
+  -d "{\"openid\":\"$OPENID\",\"password\":\"$PASSWORD\"}")
+TOKEN=$(printf '%s' "$LOGIN_JSON" | python3 -c "import sys,json; print((json.load(sys.stdin).get('data') or {}).get('token',''))")
+USER_ID=$(printf '%s' "$LOGIN_JSON" | python3 -c "import sys,json; print(str((((json.load(sys.stdin).get('data') or {}).get('user') or {}).get('id'))))")
+echo "USER_ID=$USER_ID  TOKEN_LEN=${#TOKEN}"
+
+echo
+echo "== 2) 运行模拟器，上报 $SIM_DEVICE_COUNT 台设备（device_001..device_00N；改 --device-count 就是在改发出的设备集合）=="
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy
+docker compose up -d nginx api worker mongodb mysql >/dev/null 2>&1 || true
+docker compose exec api python3 /app/simulator_client.py \
+  --device-count "$SIM_DEVICE_COUNT" \
+  --duration "$SIM_DURATION" \
+  --interval "$SIM_INTERVAL" \
+  --api-url "https://www.myhjmycjh.tech/api/v2/ingest" \
+  --no-mq \
+  --insecure \
+  --encrypt
+
+echo
+echo "== 3) 用 realtime 推导当天日期，并补跑当日汇总（生成 stats / leaderboard 所需 MySQL 数据）=="
+cd ~/desk2/Moon_Dance/Moon_Dance
+REALTIME=$(curl -k -sS "$API_BASE/api/miniapp/device/$CHECK_DEVICE_ID/realtime" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN")
+LAST_MS=$(printf '%s' "$REALTIME" | python3 -c "import sys,json; print(int(json.loads(sys.stdin.read())['data']['last_update_ms']))")
+DATA_DATE=$(python3 -c "import sys; from datetime import datetime; ms=int(sys.argv[1]); print(datetime.fromtimestamp(ms/1000).strftime('%Y-%m-%d'))" "$LAST_MS")
+echo "DATA_DATE=$DATA_DATE (from realtime.last_update_ms=$LAST_MS)"
+
+cd ~/desk2/Moon_Dance/Moon_Dance/deploy
+docker compose exec api python3 scripts/daily_aggregation.py --run-now --date "$DATA_DATE"
+cd ~/desk2/Moon_Dance/Moon_Dance
+
+echo
+echo "== 4) 小程序接口全输出：realtime/history/stats/leaderboard =="
+echo "-- realtime --"
+echo "$REALTIME" | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "-- history（围绕 realtime 往前 6 小时） --"
+START_MS=$((LAST_MS-6*3600000))
+END_MS=$LAST_MS
+curl -k -sS "$API_BASE/api/miniapp/device/$CHECK_DEVICE_ID/history?start_ms=$START_MS&end_ms=$END_MS&limit=300" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "-- stats（当前用户 days=7） --"
+curl -k -sS "$API_BASE/api/miniapp/user/$USER_ID/stats?days=7" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
+echo
+echo "-- leaderboard（当天） --"
+curl -k -sS "$API_BASE/api/miniapp/leaderboard?date=$DATA_DATE&limit=10" \
+  -H "X-API-Key: myh" \
+  -H "Authorization: Bearer $TOKEN" \
+  | python3 -c 'import sys,json; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False))'
+
 # ----------------------------------------------------------
 # 本地 PowerShell 版（如果你本地也装了 MongoDB 且有数据）
 # ----------------------------------------------------------
