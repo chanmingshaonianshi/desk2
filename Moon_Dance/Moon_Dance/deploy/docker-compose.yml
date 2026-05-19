@@ -95,7 +95,11 @@ services:
       - API_PORT=8000
       - API_USE_SSL=0
       - API_CERT_CN=localhost
-      - API_KEY=myh
+      - API_KEY=${API_KEY:-myh}
+      - JWT_SECRET=${JWT_SECRET:-moon_dance_change_me_please_set_env_32bytes}
+      - ADMIN_USERNAME=${ADMIN_USERNAME:-admin}
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:-admin123456}
+      - ADMIN_TOKEN_EXPIRE_SECONDS=${ADMIN_TOKEN_EXPIRE_SECONDS:-7200}
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
       - MYSQL_URI=mysql+pymysql://root:MySql%402026Ab@mysql:3306/moondance?charset=utf8mb4
     volumes:
