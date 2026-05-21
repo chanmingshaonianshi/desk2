@@ -1,0 +1,144 @@
+:root {
+  color-scheme: light;
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  --ink: #182033;
+  --muted: #697386;
+  --line: #dfe5ef;
+  --blue: #2563eb;
+  --green: #16a34a;
+  --red: #dc2626;
+  --amber: #d97706;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", sans-serif;
+}
+[v-cloak] { display: none; }
+button, input, select { font: inherit; }
+#app { display: flex; min-height: 100vh; }
+.sidebar {
+  width: 236px;
+  background: #111827;
+  color: #fff;
+  padding: 22px 16px;
+  position: sticky;
+  top: 0;
+  height: 100vh;
+}
+.brand { display: flex; gap: 12px; align-items: center; margin-bottom: 28px; }
+.brand-mark {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--blue);
+  font-weight: 800;
+}
+.brand strong, .brand small { display: block; }
+.brand small { color: #aab3c5; margin-top: 3px; }
+.nav-item {
+  width: 100%;
+  border: 0;
+  color: #cbd5e1;
+  background: transparent;
+  padding: 12px;
+  border-radius: 8px;
+  text-align: left;
+  cursor: pointer;
+  margin: 3px 0;
+}
+.nav-item span { display: inline-block; width: 24px; }
+.nav-item.active, .nav-item:hover { background: #243147; color: #fff; }
+.nav-item.ghost { margin-top: 26px; color: #fca5a5; }
+.main { flex: 1; min-width: 0; }
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 24px 30px 12px;
+}
+h1 { margin: 0; font-size: 24px; }
+h2 { margin: 0 0 14px; font-size: 16px; }
+p { color: var(--muted); margin: 6px 0 0; }
+.toolbar { display: flex; gap: 10px; }
+.toolbar select, .toolbar button, .login input, .login button {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+}
+.toolbar button, .login button {
+  background: var(--blue);
+  border-color: var(--blue);
+  color: white;
+  cursor: pointer;
+}
+.content { padding: 16px 30px 32px; }
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.metric, .panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.04);
+}
+.metric { padding: 16px; }
+.metric span, .metric small { display: block; color: var(--muted); }
+.metric strong { display: block; font-size: 28px; margin: 8px 0 4px; }
+.grid { display: grid; gap: 14px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.panel { padding: 16px; margin-bottom: 14px; }
+.chart { height: 330px; min-width: 0; }
+.chart.wide { height: 360px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; min-width: 780px; }
+th, td { padding: 12px 10px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
+th { color: var(--muted); font-weight: 600; background: #f8fafc; }
+.status {
+  display: inline-flex;
+  align-items: center;
+  min-width: 44px;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 4px 9px;
+  font-size: 12px;
+  background: #eef2f7;
+}
+.status.ok { color: var(--green); background: #dcfce7; }
+.status.warn { color: var(--amber); background: #fef3c7; }
+.status.off { color: var(--red); background: #fee2e2; }
+.login-mask {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(17, 24, 39, 0.5);
+  padding: 20px;
+}
+.login {
+  width: min(380px, 100%);
+  background: #fff;
+  border-radius: 8px;
+  padding: 24px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.22);
+}
+.login input, .login button { width: 100%; margin-top: 12px; }
+.login p { color: var(--red); }
+@media (max-width: 960px) {
+  #app { display: block; }
+  .sidebar { width: 100%; height: auto; position: static; }
+  .topbar { align-items: flex-start; flex-direction: column; padding: 20px 18px 8px; }
+  .content { padding: 12px 18px 24px; }
+  .metrics, .grid.two { grid-template-columns: 1fr; }
+}

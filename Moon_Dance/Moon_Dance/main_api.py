@@ -9,11 +9,12 @@ import os
 import time
 from typing import Tuple
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 from OpenSSL import crypto
 
 from src.api.auth import auth_bp
+from src.api.admin_routes import admin_bp
 from src.api.routes import api_bp
 from src.api.miniapp_routes import miniapp_bp
 from src.config.settings import BASE_PATH, CA_CERT_FILE, CA_KEY_FILE, CERT_DIR, CERT_FILE, KEY_FILE, LOG_DIR
@@ -133,6 +134,7 @@ def create_app() -> Flask:
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
+    app.register_blueprint(admin_bp)
     app.register_blueprint(miniapp_bp)  # 小程序接口路由
 
     # 初始化 MySQL 数据库表（自动建表，幂等操作）
@@ -160,6 +162,15 @@ def create_app() -> Flask:
             ),
             200,
         )
+
+    @app.get("/admin")
+    @app.get("/admin/")
+    def admin_index():
+        return send_from_directory(os.path.join(BASE_PATH, "web_admin"), "index.html")
+
+    @app.get("/admin/<path:filename>")
+    def admin_assets(filename: str):
+        return send_from_directory(os.path.join(BASE_PATH, "web_admin"), filename)
 
     return app
 
