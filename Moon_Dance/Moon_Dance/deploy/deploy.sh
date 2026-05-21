@@ -14,6 +14,7 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 CERT_DIR="$REPO_ROOT/certs"
 BACKUP_DIR="$(mktemp -d)"
+COMPOSE_FILE="$SCRIPT_DIR/docker-compose.yml"
 
 cleanup() {
   rm -rf "$BACKUP_DIR"
@@ -76,18 +77,18 @@ echo ""
 echo "======================================================="
 echo " [4/5] 正在安全停止当前运行的后端集群..."
 echo "======================================================="
-docker compose down
+docker compose -f "$COMPOSE_FILE" down
 
 echo ""
 echo "======================================================="
 echo " [5/5] 正在重新构建并启动全新集群..."
 echo "======================================================="
-docker compose build
-docker compose up -d --force-recreate
+docker compose -f "$COMPOSE_FILE" build
+docker compose -f "$COMPOSE_FILE" up -d --force-recreate
 
 echo ""
 echo "======================================================="
 echo " ✅ 部署完成！服务器已同步到 GitHub 最新版本。"
 echo " 已自动保留证书，并重建当前 Docker 集群。"
 echo "======================================================="
-docker compose ps
+docker compose -f "$COMPOSE_FILE" ps
