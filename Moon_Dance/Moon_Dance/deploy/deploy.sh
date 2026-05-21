@@ -70,6 +70,7 @@ if [ -f "$CERT_DIR/server.key" ]; then
   chmod 600 "$CERT_DIR/server.key"
 fi
 docker rm -f nginx-ssl moondance-api >/dev/null 2>&1 || true
+cd "$SCRIPT_DIR"
 
 echo ""
 echo "======================================================="
