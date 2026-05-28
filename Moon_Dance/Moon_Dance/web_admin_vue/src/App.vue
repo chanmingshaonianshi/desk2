@@ -8,7 +8,7 @@
   <el-container v-else class="admin-shell">
     <el-aside width="244px" class="admin-aside">
       <div class="brand">
-        <div class="brand-mark">M</div>
+        <img class="brand-mark" src="/admin/moon-dance-logo.jpg" alt="Moon Dance Logo" />
         <div>
           <strong>Moon Dance</strong>
           <span>坐垫运营管理台</span>

@@ -395,7 +395,7 @@ createApp({
     <LoginView v-if="!auth.token" :api-key="auth.apiKey" @login-success="handleLoginSuccess"></LoginView>
     <el-container v-else class="admin-shell">
       <el-aside width="244px" class="admin-aside">
-        <div class="brand"><div class="brand-mark">M</div><div><strong>Moon Dance</strong><span>坐垫运营管理台</span></div></div>
+        <div class="brand"><img class="brand-mark" src="/admin/moon-dance-logo.jpg" alt="Moon Dance Logo" /><div><strong>Moon Dance</strong><span>坐垫运营管理台</span></div></div>
         <el-menu :default-active="activeView" class="side-menu" background-color="#111827" text-color="#cbd5e1" active-text-color="#ffffff" @select="activeView = $event">
           <el-menu-item index="dashboard"><span>运营总览</span></el-menu-item>
           <el-menu-item index="devices"><span>设备台账</span></el-menu-item>
