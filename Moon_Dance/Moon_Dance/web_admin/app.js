@@ -168,9 +168,22 @@ const ChinaHeatMap = {
       .map((item) => ({ ...item, percentage: Math.round((item.value / maxValue.value) * 100) })));
     async function ensureChinaMap() {
       if (echarts.getMap("china")) return;
-      const response = await fetch("https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json");
-      const geoJson = await response.json();
-      echarts.registerMap("china", geoJson);
+      const sources = [
+        "https://cdn.jsdelivr.net/gh/apache/echarts-website@asf-site/examples/data/asset/geo/China.json",
+        "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json",
+      ];
+      for (const source of sources) {
+        try {
+          const response = await fetch(source);
+          if (!response.ok) continue;
+          const geoJson = await response.json();
+          echarts.registerMap("china", geoJson);
+          return;
+        } catch (error) {
+          console.warn("China map source failed:", source, error);
+        }
+      }
+      throw new Error("中国地图数据加载失败");
     }
     async function renderChart() {
       if (!chartRef.value) return;
