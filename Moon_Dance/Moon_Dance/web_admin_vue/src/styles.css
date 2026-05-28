@@ -228,6 +228,38 @@ body {
   gap: 13px;
 }
 
+.map-panel {
+  display: grid;
+  grid-template-columns: minmax(420px, 1.2fr) minmax(220px, 0.8fr);
+  gap: 18px;
+  align-items: center;
+}
+
+.china-map {
+  width: 100%;
+  min-height: 420px;
+}
+
+.map-rank {
+  display: grid;
+  gap: 13px;
+}
+
+.map-rank-item {
+  display: grid;
+  gap: 7px;
+}
+
+.map-rank-item strong,
+.map-rank-item span {
+  display: block;
+}
+
+.map-rank-item span {
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
 .region-item {
   display: grid;
   grid-template-columns: 150px 1fr;
@@ -291,5 +323,13 @@ body {
 
   .region-item {
     grid-template-columns: 1fr;
+  }
+
+  .map-panel {
+    grid-template-columns: 1fr;
+  }
+
+  .china-map {
+    min-height: 320px;
   }
 }

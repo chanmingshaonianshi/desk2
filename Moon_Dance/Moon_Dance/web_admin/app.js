@@ -123,8 +123,102 @@ const LoginView = {
   },
 };
 
+const ChinaHeatMap = {
+  name: "ChinaHeatMap",
+  props: {
+    regions: { type: Array, default: () => [] },
+  },
+  template: `
+    <div class="map-panel">
+      <div ref="chartRef" class="china-map"></div>
+      <div class="map-rank">
+        <div v-for="item in ranking" :key="item.name" class="map-rank-item">
+          <div><strong>{{ item.name }}</strong><span>{{ item.value }} 台设备</span></div>
+          <el-progress :percentage="item.percentage" :show-text="false"></el-progress>
+        </div>
+        <el-empty v-if="!ranking.length" description="暂无省份使用数据"></el-empty>
+      </div>
+    </div>
+  `,
+  setup(props) {
+    const chartRef = ref(null);
+    let chart = null;
+    let resizeObserver = null;
+    const provinceMap = {
+      北京: "北京", 上海: "上海", 天津: "天津", 重庆: "重庆", 河北: "河北", 山西: "山西",
+      辽宁: "辽宁", 吉林: "吉林", 黑龙江: "黑龙江", 江苏: "江苏", 浙江: "浙江", 杭州: "浙江",
+      安徽: "安徽", 福建: "福建", 江西: "江西", 山东: "山东", 河南: "河南", 湖北: "湖北",
+      武汉: "湖北", 湖南: "湖南", 广东: "广东", 广州: "广东", 深圳: "广东", 海南: "海南",
+      四川: "四川", 成都: "四川", 贵州: "贵州", 云南: "云南", 陕西: "陕西", 西安: "陕西",
+      甘肃: "甘肃", 青海: "青海", 台湾: "台湾", 内蒙古: "内蒙古", 广西: "广西", 西藏: "西藏",
+      宁夏: "宁夏", 新疆: "新疆", 香港: "香港", 澳门: "澳门",
+    };
+    const mapData = computed(() => {
+      const totals = {};
+      props.regions.forEach((item) => {
+        const province = provinceMap[item.name] || item.name;
+        totals[province] = (totals[province] || 0) + Number(item.value || 0);
+      });
+      return Object.entries(totals).map(([name, value]) => ({ name, value }));
+    });
+    const maxValue = computed(() => Math.max(...mapData.value.map((item) => item.value), 1));
+    const ranking = computed(() => [...mapData.value]
+      .sort((a, b) => b.value - a.value)
+      .slice(0, 8)
+      .map((item) => ({ ...item, percentage: Math.round((item.value / maxValue.value) * 100) })));
+    async function ensureChinaMap() {
+      if (echarts.getMap("china")) return;
+      const response = await fetch("https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json");
+      const geoJson = await response.json();
+      echarts.registerMap("china", geoJson);
+    }
+    async function renderChart() {
+      if (!chartRef.value) return;
+      await ensureChinaMap();
+      if (!chart) chart = echarts.init(chartRef.value);
+      chart.setOption({
+        tooltip: {
+          trigger: "item",
+          formatter: (params) => `${params.name}<br/>设备数：${params.value || 0} 台`,
+        },
+        visualMap: {
+          min: 0,
+          max: maxValue.value,
+          left: 12,
+          bottom: 16,
+          text: ["高", "低"],
+          calculable: true,
+          inRange: { color: ["#e8f1ff", "#8bb8ff", "#2563eb"] },
+        },
+        series: [{
+          name: "省份设备热度",
+          type: "map",
+          map: "china",
+          roam: false,
+          emphasis: { label: { show: true }, itemStyle: { areaColor: "#f59e0b" } },
+          itemStyle: { borderColor: "#ffffff", borderWidth: 1 },
+          data: mapData.value,
+        }],
+      }, true);
+      chart.resize();
+    }
+    onMounted(() => {
+      nextTick(renderChart);
+      resizeObserver = new ResizeObserver(() => chart?.resize());
+      resizeObserver.observe(chartRef.value);
+    });
+    watch(mapData, () => nextTick(renderChart), { deep: true });
+    onBeforeUnmount(() => {
+      resizeObserver?.disconnect();
+      chart?.dispose();
+    });
+    return { chartRef, ranking };
+  },
+};
+
 const DashboardView = {
   name: "DashboardView",
+  components: { ChinaHeatMap },
   props: {
     summary: { type: Object, default: () => ({}) },
     devices: { type: Array, default: () => [] },
@@ -147,14 +241,8 @@ const DashboardView = {
           </div>
         </el-card>
         <el-card shadow="never">
-          <template #header><div class="card-header"><span>地区设备使用情况</span><el-tag type="info">按设备数量排序</el-tag></div></template>
-          <div class="region-list">
-            <div v-for="region in regionRanking" :key="region.name" class="region-item">
-              <div><strong>{{ region.name }}</strong><span>{{ region.value }} 台设备</span></div>
-              <el-progress :percentage="region.percentage" :show-text="false"></el-progress>
-            </div>
-            <el-empty v-if="!regionRanking.length" description="暂无地域数据"></el-empty>
-          </div>
+          <template #header><div class="card-header"><span>省份使用热度</span><el-tag type="info">中国地图热力图</el-tag></div></template>
+          <ChinaHeatMap :regions="regions"></ChinaHeatMap>
         </el-card>
       </div>
       <el-card shadow="never">
@@ -184,16 +272,12 @@ const DashboardView = {
       { label: "离线待跟进", value: `${offlineCount.value} 台`, hint: "优先检查网络和供电" },
       { label: "使用异常设备", value: `${abnormalCount.value} 台`, hint: "可用于用户回访和指导" },
     ]);
-    const regionRanking = computed(() => {
-      const max = Math.max(...props.regions.map((item) => item.value || 0), 1);
-      return [...props.regions].sort((a, b) => (b.value || 0) - (a.value || 0)).slice(0, 8).map((item) => ({ ...item, percentage: Math.round(((item.value || 0) / max) * 100) }));
-    });
     function adviceFor(device) {
       if (!device.is_online) return "联系客户确认设备供电、网络连接或是否已停止使用";
       if (device.posture_status !== "normal") return "建议客服回访，指导用户正确摆放坐垫和调整坐姿";
       return "持续观察";
     }
-    return { metrics, activeRate, offlineCount, abnormalCount, followUpDevices, regionRanking, adviceFor };
+    return { metrics, activeRate, offlineCount, abnormalCount, followUpDevices, adviceFor };
   },
 };
 

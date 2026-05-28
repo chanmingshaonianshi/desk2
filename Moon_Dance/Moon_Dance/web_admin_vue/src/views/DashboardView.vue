@@ -37,20 +37,11 @@
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
-            <span>地区设备使用情况</span>
-            <el-tag type="info">按设备数量排序</el-tag>
+            <span>省份使用热度</span>
+            <el-tag type="info">中国地图热力图</el-tag>
           </div>
         </template>
-        <div class="region-list">
-          <div v-for="region in regionRanking" :key="region.name" class="region-item">
-            <div>
-              <strong>{{ region.name }}</strong>
-              <span>{{ region.value }} 台设备</span>
-            </div>
-            <el-progress :percentage="region.percentage" :show-text="false" />
-          </div>
-          <el-empty v-if="!regionRanking.length" description="暂无地域数据" />
-        </div>
+        <ChinaHeatMap :regions="regions" />
       </el-card>
     </div>
 
@@ -92,6 +83,7 @@
 
 <script setup>
 import { computed } from "vue";
+import ChinaHeatMap from "../components/ChinaHeatMap.vue";
 
 const props = defineProps({
   summary: {
@@ -130,17 +122,6 @@ const metrics = computed(() => [
   { label: "离线待跟进", value: `${offlineCount.value} 台`, hint: "优先检查网络和供电" },
   { label: "使用异常设备", value: `${abnormalCount.value} 台`, hint: "可用于用户回访和指导" },
 ]);
-
-const regionRanking = computed(() => {
-  const max = Math.max(...props.regions.map((item) => item.value || 0), 1);
-  return [...props.regions]
-    .sort((a, b) => (b.value || 0) - (a.value || 0))
-    .slice(0, 8)
-    .map((item) => ({
-      ...item,
-      percentage: Math.round(((item.value || 0) / max) * 100),
-    }));
-});
 
 function adviceFor(device) {
   if (!device.is_online) return "联系客户确认设备供电、网络连接或是否已停止使用";
