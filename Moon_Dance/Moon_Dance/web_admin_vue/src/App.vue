@@ -1,0 +1,160 @@
+<template>
+  <LoginView
+    v-if="!auth.token"
+    :api-key="auth.apiKey"
+    @login-success="handleLoginSuccess"
+  />
+
+  <el-container v-else class="admin-shell">
+    <el-aside width="236px" class="admin-aside">
+      <div class="brand">
+        <div class="brand-mark">M</div>
+        <div>
+          <strong>Moon Dance</strong>
+          <span>智能坐垫管理端</span>
+        </div>
+      </div>
+
+      <el-menu
+        :default-active="activeView"
+        class="side-menu"
+        background-color="#111827"
+        text-color="#cbd5e1"
+        active-text-color="#ffffff"
+        @select="activeView = $event"
+      >
+        <el-menu-item index="dashboard">
+          <el-icon><DataAnalysis /></el-icon>
+          <span>数据总览</span>
+        </el-menu-item>
+        <el-menu-item index="devices">
+          <el-icon><Monitor /></el-icon>
+          <span>设备管理</span>
+        </el-menu-item>
+        <el-menu-item index="analytics">
+          <el-icon><TrendCharts /></el-icon>
+          <span>统计分析</span>
+        </el-menu-item>
+      </el-menu>
+
+      <el-button class="logout-button" plain type="danger" @click="logout">退出登录</el-button>
+    </el-aside>
+
+    <el-container>
+      <el-header class="admin-header" height="84px">
+        <div>
+          <h1>{{ currentTitle }}</h1>
+          <p>设备运行、地域分布、坐姿压力和用户健康数据聚合分析</p>
+        </div>
+        <div class="header-actions">
+          <el-select v-model="days" class="days-select" @change="loadAll">
+            <el-option label="近 7 天" :value="7" />
+            <el-option label="近 30 天" :value="30" />
+            <el-option label="近 90 天" :value="90" />
+          </el-select>
+          <el-button type="primary" :loading="loading" @click="loadAll">
+            <el-icon><Refresh /></el-icon>
+            刷新
+          </el-button>
+        </div>
+      </el-header>
+
+      <el-main v-loading="loading" class="admin-main">
+        <DashboardView
+          v-show="activeView === 'dashboard'"
+          :summary="summary"
+          :regions="regions"
+          :analytics="analytics"
+        />
+        <DeviceView
+          v-show="activeView === 'devices'"
+          :devices="devices"
+        />
+        <AnalyticsView
+          v-show="activeView === 'analytics'"
+          :analytics="analytics"
+          :users="users"
+        />
+      </el-main>
+    </el-container>
+  </el-container>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref } from "vue";
+import { ElMessage } from "element-plus";
+import { DataAnalysis, Monitor, Refresh, TrendCharts } from "@element-plus/icons-vue";
+import LoginView from "./views/LoginView.vue";
+import DashboardView from "./views/DashboardView.vue";
+import DeviceView from "./views/DeviceView.vue";
+import AnalyticsView from "./views/AnalyticsView.vue";
+import { clearAuth, createAdminApi, getStoredAuth, saveAuth } from "./api/admin";
+
+const storedAuth = getStoredAuth();
+const auth = reactive({
+  token: storedAuth.token,
+  apiKey: storedAuth.apiKey,
+});
+const activeView = ref("dashboard");
+const days = ref(30);
+const loading = ref(false);
+const summary = ref({});
+const devices = ref([]);
+const regions = ref([]);
+const analytics = ref({ timeline: [], pressure_points: [] });
+const users = ref([]);
+
+const titleMap = {
+  dashboard: "数据总览",
+  devices: "设备管理",
+  analytics: "统计分析",
+};
+
+const currentTitle = computed(() => titleMap[activeView.value] || "管理端");
+
+async function loadAll() {
+  if (!auth.token) return;
+  loading.value = true;
+  try {
+    const api = createAdminApi(auth);
+    const [summaryData, devicesData, regionsData, analyticsData, usersData] = await Promise.all([
+      api.summary(),
+      api.devices(),
+      api.regions(),
+      api.analytics(days.value),
+      api.users(),
+    ]);
+    summary.value = summaryData;
+    devices.value = devicesData.devices || [];
+    regions.value = regionsData.regions || [];
+    analytics.value = analyticsData;
+    users.value = usersData.users || [];
+  } catch (error) {
+    ElMessage.error(error.message || "数据加载失败");
+    if (String(error.message || "").includes("Token")) {
+      logout();
+    }
+  } finally {
+    loading.value = false;
+  }
+}
+
+function handleLoginSuccess({ token, apiKey }) {
+  auth.token = token;
+  auth.apiKey = apiKey;
+  saveAuth({ token, apiKey });
+  ElMessage.success("登录成功");
+  loadAll();
+}
+
+function logout() {
+  auth.token = "";
+  clearAuth();
+}
+
+onMounted(() => {
+  if (auth.token) {
+    loadAll();
+  }
+});
+</script>

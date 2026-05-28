@@ -4,111 +4,14 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Moon Dance 智能坐垫管理端</title>
+  <link rel="stylesheet" href="https://unpkg.com/element-plus/dist/index.css" />
   <link rel="stylesheet" href="/admin/styles.css" />
   <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"></script>
+  <script src="https://unpkg.com/element-plus/dist/index.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
 </head>
 <body>
-  <div id="app" v-cloak>
-    <aside class="sidebar">
-      <div class="brand">
-        <span class="brand-mark">M</span>
-        <div><strong>Moon Dance</strong><small>智能坐垫管理端</small></div>
-      </div>
-      <button v-for="item in nav" :key="item.key" class="nav-item" :class="{active: view === item.key}" @click="view = item.key">
-        <span>{{ item.icon }}</span>{{ item.label }}
-      </button>
-      <button class="nav-item ghost" @click="logout">退出登录</button>
-    </aside>
-
-    <main class="main">
-      <header class="topbar">
-        <div>
-          <h1>{{ currentTitle }}</h1>
-          <p>设备运行、地域分布、坐姿压力和用户健康数据聚合分析</p>
-        </div>
-        <div class="toolbar">
-          <select v-model="days" @change="loadAll">
-            <option value="7">近 7 天</option>
-            <option value="30">近 30 天</option>
-            <option value="90">近 90 天</option>
-          </select>
-          <button @click="loadAll" :disabled="loading">刷新</button>
-        </div>
-      </header>
-
-      <section v-if="view === 'overview'" class="content">
-        <div class="metrics">
-          <div class="metric" v-for="metric in metrics" :key="metric.label">
-            <span>{{ metric.label }}</span>
-            <strong>{{ metric.value }}</strong>
-            <small>{{ metric.hint }}</small>
-          </div>
-        </div>
-        <div class="grid two">
-          <section class="panel"><h2>健康评分趋势</h2><div ref="scoreChart" class="chart"></div></section>
-          <section class="panel"><h2>地域分布</h2><div ref="regionChart" class="chart"></div></section>
-        </div>
-        <section class="panel"><h2>左右压力曲线</h2><div ref="pressureChart" class="chart wide"></div></section>
-      </section>
-
-      <section v-if="view === 'devices'" class="content">
-        <section class="panel">
-          <h2>设备列表</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>设备</th><th>状态</th><th>地域</th><th>用户</th><th>左压力(N)</th><th>右压力(N)</th><th>偏差</th><th>坐姿</th></tr></thead>
-              <tbody>
-                <tr v-for="device in devices" :key="device.device_id">
-                  <td>{{ device.device_id }}</td>
-                  <td><span class="status" :class="device.is_online ? 'ok' : 'off'">{{ device.is_online ? '在线' : '离线' }}</span></td>
-                  <td>{{ device.region }}</td>
-                  <td>{{ device.nickname || '-' }}</td>
-                  <td>{{ device.left_force_n }}</td>
-                  <td>{{ device.right_force_n }}</td>
-                  <td>{{ percent(device.deviation_ratio) }}</td>
-                  <td><span class="status" :class="device.posture_status === 'normal' ? 'ok' : 'warn'">{{ device.posture_status === 'normal' ? '标准' : '异常' }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-
-      <section v-if="view === 'analytics'" class="content">
-        <div class="grid two">
-          <section class="panel"><h2>入座时长柱状图</h2><div ref="durationChart" class="chart"></div></section>
-          <section class="panel"><h2>不良坐姿次数</h2><div ref="badChart" class="chart"></div></section>
-        </div>
-        <section class="panel">
-          <h2>用户统计</h2>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>ID</th><th>昵称</th><th>绑定设备</th><th>累计分</th><th>久坐阈值</th><th>提醒</th><th>榜单可见</th></tr></thead>
-              <tbody>
-                <tr v-for="user in users" :key="user.id">
-                  <td>{{ user.id }}</td><td>{{ user.nickname || user.openid }}</td><td>{{ user.device_id || '-' }}</td>
-                  <td>{{ user.total_score }}</td><td>{{ user.sedentary_threshold_min }} 分钟</td>
-                  <td>{{ user.reminder_enabled ? '开启' : '关闭' }}</td><td>{{ user.visible_in_leaderboard ? '是' : '否' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-      </section>
-    </main>
-
-    <div v-if="!token" class="login-mask">
-      <form class="login" @submit.prevent="login">
-        <h2>管理员登录</h2>
-        <input v-model="loginForm.username" placeholder="账号" autocomplete="username" />
-        <input v-model="loginForm.password" placeholder="密码" type="password" autocomplete="current-password" />
-        <input v-model="apiKey" placeholder="X-API-Key" />
-        <button type="submit">登录</button>
-        <p v-if="error">{{ error }}</p>
-      </form>
-    </div>
-  </div>
+  <div id="app"></div>
   <script src="/admin/app.js"></script>
 </body>
 </html>

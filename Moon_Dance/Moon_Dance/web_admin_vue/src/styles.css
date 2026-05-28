@@ -1,8 +1,10 @@
 :root {
   color-scheme: light;
   --admin-bg: #f5f7fb;
+  --admin-panel: #ffffff;
   --admin-ink: #182033;
   --admin-muted: #697386;
+  --admin-line: #dfe5ef;
 }
 
 * {
@@ -43,10 +45,7 @@ body {
   font-size: 22px;
 }
 
-.login-title span,
-.admin-header p,
-.metric-card span,
-.metric-card small {
+.login-title span {
   color: var(--admin-muted);
 }
 
@@ -127,6 +126,7 @@ body {
 
 .admin-header p {
   margin: 6px 0 0;
+  color: var(--admin-muted);
 }
 
 .header-actions {
@@ -162,6 +162,7 @@ body {
 .metric-card span,
 .metric-card small {
   display: block;
+  color: var(--admin-muted);
 }
 
 .metric-card strong {
