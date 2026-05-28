@@ -6,12 +6,12 @@
   />
 
   <el-container v-else class="admin-shell">
-    <el-aside width="236px" class="admin-aside">
+    <el-aside width="244px" class="admin-aside">
       <div class="brand">
         <div class="brand-mark">M</div>
         <div>
           <strong>Moon Dance</strong>
-          <span>智能坐垫管理端</span>
+          <span>坐垫运营管理台</span>
         </div>
       </div>
 
@@ -24,16 +24,16 @@
         @select="activeView = $event"
       >
         <el-menu-item index="dashboard">
-          <el-icon><DataAnalysis /></el-icon>
-          <span>数据总览</span>
+          <el-icon><DataBoard /></el-icon>
+          <span>运营总览</span>
         </el-menu-item>
         <el-menu-item index="devices">
-          <el-icon><Monitor /></el-icon>
-          <span>设备管理</span>
+          <el-icon><Tickets /></el-icon>
+          <span>设备台账</span>
         </el-menu-item>
         <el-menu-item index="analytics">
           <el-icon><TrendCharts /></el-icon>
-          <span>统计分析</span>
+          <span>数据分析</span>
         </el-menu-item>
       </el-menu>
 
@@ -41,10 +41,10 @@
     </el-aside>
 
     <el-container>
-      <el-header class="admin-header" height="84px">
+      <el-header class="admin-header" height="92px">
         <div>
           <h1>{{ currentTitle }}</h1>
-          <p>设备运行、地域分布、坐姿压力和用户健康数据聚合分析</p>
+          <p>{{ currentSubtitle }}</p>
         </div>
         <div class="header-actions">
           <el-select v-model="days" class="days-select" @change="loadAll">
@@ -63,8 +63,8 @@
         <DashboardView
           v-show="activeView === 'dashboard'"
           :summary="summary"
+          :devices="devices"
           :regions="regions"
-          :analytics="analytics"
         />
         <DeviceView
           v-show="activeView === 'devices'"
@@ -83,7 +83,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from "vue";
 import { ElMessage } from "element-plus";
-import { DataAnalysis, Monitor, Refresh, TrendCharts } from "@element-plus/icons-vue";
+import { DataBoard, Refresh, Tickets, TrendCharts } from "@element-plus/icons-vue";
 import LoginView from "./views/LoginView.vue";
 import DashboardView from "./views/DashboardView.vue";
 import DeviceView from "./views/DeviceView.vue";
@@ -104,13 +104,23 @@ const regions = ref([]);
 const analytics = ref({ timeline: [], pressure_points: [] });
 const users = ref([]);
 
-const titleMap = {
-  dashboard: "数据总览",
-  devices: "设备管理",
-  analytics: "统计分析",
+const pageMeta = {
+  dashboard: {
+    title: "运营总览",
+    subtitle: "面向售卖方的设备活跃、离线异常、地区投放和售后跟进看板",
+  },
+  devices: {
+    title: "设备台账",
+    subtitle: "快速查看已售设备运行状态、绑定用户和售后处理建议",
+  },
+  analytics: {
+    title: "数据分析",
+    subtitle: "保留健康评分、坐姿质量和压力曲线，用于复盘使用质量",
+  },
 };
 
-const currentTitle = computed(() => titleMap[activeView.value] || "管理端");
+const currentTitle = computed(() => pageMeta[activeView.value]?.title || "管理端");
+const currentSubtitle = computed(() => pageMeta[activeView.value]?.subtitle || "");
 
 async function loadAll() {
   if (!auth.token) return;

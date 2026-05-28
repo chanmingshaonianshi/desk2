@@ -4,7 +4,7 @@
       <template #header>
         <div class="login-title">
           <strong>Moon Dance</strong>
-          <span>智能坐垫管理端</span>
+          <span>坐垫运营管理台</span>
         </div>
       </template>
 

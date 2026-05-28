@@ -2,7 +2,10 @@
   <el-card shadow="never">
     <template #header>
       <div class="card-header">
-        <span>用户统计</span>
+        <div>
+          <span>用户统计</span>
+          <p class="card-subtitle">用于查看绑定用户、累计积分和提醒设置</p>
+        </div>
         <el-tag type="info">共 {{ users.length }} 人</el-tag>
       </div>
     </template>
