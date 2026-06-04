@@ -8,7 +8,7 @@
   <el-container v-else class="admin-shell">
     <el-aside width="244px" class="admin-aside">
       <div class="brand">
-        <img class="brand-mark" src="/admin/moon-dance-logo.jpg" alt="Moon Dance Logo" />
+        <img class="brand-mark" :src="logoUrl" alt="Moon Dance Logo" />
         <div>
           <strong>Moon Dance</strong>
           <span>坐垫运营管理台</span>
@@ -103,6 +103,7 @@ const devices = ref([]);
 const regions = ref([]);
 const analytics = ref({ timeline: [], pressure_points: [] });
 const users = ref([]);
+const logoUrl = `${import.meta.env.BASE_URL}moon-dance-logo.jpg`;
 
 const pageMeta = {
   dashboard: {
