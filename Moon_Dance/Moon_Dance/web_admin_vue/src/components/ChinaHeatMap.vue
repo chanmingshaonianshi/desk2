@@ -30,46 +30,46 @@ let chart = null;
 let resizeObserver = null;
 
 const provinceMap = {
-  北京: "北京",
-  上海: "上海",
-  天津: "天津",
-  重庆: "重庆",
-  河北: "河北",
-  山西: "山西",
-  辽宁: "辽宁",
-  吉林: "吉林",
-  黑龙江: "黑龙江",
-  江苏: "江苏",
-  浙江: "浙江",
-  杭州: "浙江",
-  安徽: "安徽",
-  福建: "福建",
-  江西: "江西",
-  山东: "山东",
-  河南: "河南",
-  湖北: "湖北",
-  武汉: "湖北",
-  湖南: "湖南",
-  广东: "广东",
-  广州: "广东",
-  深圳: "广东",
-  海南: "海南",
-  四川: "四川",
-  成都: "四川",
-  贵州: "贵州",
-  云南: "云南",
-  陕西: "陕西",
-  西安: "陕西",
-  甘肃: "甘肃",
-  青海: "青海",
-  台湾: "台湾",
-  内蒙古: "内蒙古",
-  广西: "广西",
-  西藏: "西藏",
-  宁夏: "宁夏",
-  新疆: "新疆",
-  香港: "香港",
-  澳门: "澳门",
+  北京: "北京市",
+  上海: "上海市",
+  天津: "天津市",
+  重庆: "重庆市",
+  河北: "河北省",
+  山西: "山西省",
+  辽宁: "辽宁省",
+  吉林: "吉林省",
+  黑龙江: "黑龙江省",
+  江苏: "江苏省",
+  浙江: "浙江省",
+  杭州: "浙江省",
+  安徽: "安徽省",
+  福建: "福建省",
+  江西: "江西省",
+  山东: "山东省",
+  河南: "河南省",
+  湖北: "湖北省",
+  武汉: "湖北省",
+  湖南: "湖南省",
+  广东: "广东省",
+  广州: "广东省",
+  深圳: "广东省",
+  海南: "海南省",
+  四川: "四川省",
+  成都: "四川省",
+  贵州: "贵州省",
+  云南: "云南省",
+  陕西: "陕西省",
+  西安: "陕西省",
+  甘肃: "甘肃省",
+  青海: "青海省",
+  台湾: "台湾省",
+  内蒙古: "内蒙古自治区",
+  广西: "广西壮族自治区",
+  西藏: "西藏自治区",
+  宁夏: "宁夏回族自治区",
+  新疆: "新疆维吾尔自治区",
+  香港: "香港特别行政区",
+  澳门: "澳门特别行政区",
 };
 
 const mapData = computed(() => {
@@ -95,22 +95,12 @@ const ranking = computed(() => {
 
 async function ensureChinaMap() {
   if (echarts.getMap("china")) return;
-  const sources = [
-    "https://cdn.jsdelivr.net/gh/apache/echarts-website@asf-site/examples/data/asset/geo/China.json",
-    "https://geo.datav.aliyun.com/areas_v3/bound/100000_full.json",
-  ];
-  for (const source of sources) {
-    try {
-      const response = await fetch(source);
-      if (!response.ok) continue;
-      const geoJson = await response.json();
-      echarts.registerMap("china", geoJson);
-      return;
-    } catch (error) {
-      console.warn("China map source failed:", source, error);
-    }
+  const response = await fetch(`${import.meta.env.BASE_URL}maps/china.json`);
+  if (!response.ok) {
+    throw new Error(`中国地图数据加载失败：${response.status}`);
   }
-  throw new Error("中国地图数据加载失败");
+  const geoJson = await response.json();
+  echarts.registerMap("china", geoJson);
 }
 
 async function renderChart() {
