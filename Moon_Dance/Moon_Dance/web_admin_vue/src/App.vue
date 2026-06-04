@@ -74,6 +74,8 @@
           v-show="activeView === 'analytics'"
           :analytics="analytics"
           :users="users"
+          :devices="devices"
+          :regions="regions"
         />
       </el-main>
     </el-container>
@@ -116,7 +118,7 @@ const pageMeta = {
   },
   analytics: {
     title: "数据分析",
-    subtitle: "保留健康评分、坐姿质量和压力曲线，用于复盘使用质量",
+    subtitle: "分析设备使用趋势、省份活跃情况和地区投放效果，辅助运营决策",
   },
 };
 
