@@ -18,8 +18,8 @@
       <el-menu
         :default-active="activeView"
         class="side-menu"
-        background-color="#111827"
-        text-color="#cbd5e1"
+        background-color="#1c2d3f"
+        text-color="#c3ccda"
         active-text-color="#ffffff"
         @select="activeView = $event"
       >
@@ -41,7 +41,7 @@
     </el-aside>
 
     <el-container>
-      <el-header class="admin-header" height="92px">
+      <el-header class="admin-header" height="82px">
         <div>
           <h1>{{ currentTitle }}</h1>
           <p>{{ currentSubtitle }}</p>

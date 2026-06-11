@@ -121,7 +121,7 @@ async function renderChart() {
         text: ["高", "低"],
         calculable: true,
         inRange: {
-          color: ["#e8f1ff", "#8bb8ff", "#2563eb"],
+          color: ["#eef3fb", "#94acd8", "#3a6fd8"],
         },
       },
       series: [
@@ -132,7 +132,7 @@ async function renderChart() {
           roam: false,
           emphasis: {
             label: { show: true },
-            itemStyle: { areaColor: "#f59e0b" },
+            itemStyle: { areaColor: "#b8873b" },
           },
           itemStyle: {
             borderColor: "#ffffff",

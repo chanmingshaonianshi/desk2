@@ -206,7 +206,7 @@ const durationOption = computed(() => ({
       type: "bar",
       name: "入座分钟",
       data: timeline.value.map((item) => item.total_seated_minutes),
-      itemStyle: { color: "#2563eb" },
+      itemStyle: { color: "#3a6fd8" },
     },
   ],
 }));
@@ -225,7 +225,7 @@ const regionRankOption = computed(() => ({
       type: "bar",
       name: "设备数",
       data: regionTopRows.value.map((item) => item.total),
-      itemStyle: { color: "#2563eb" },
+      itemStyle: { color: "#3a6fd8" },
     },
   ],
 }));
@@ -245,14 +245,14 @@ const regionStatusOption = computed(() => ({
       stack: "device-status",
       name: "活跃设备",
       data: regionTopRows.value.map((item) => item.online),
-      itemStyle: { color: "#16a34a" },
+      itemStyle: { color: "#4f8f6b" },
     },
     {
       type: "bar",
       stack: "device-status",
       name: "离线设备",
       data: regionTopRows.value.map((item) => item.offline),
-      itemStyle: { color: "#f59e0b" },
+      itemStyle: { color: "#b8873b" },
     },
   ],
 }));
