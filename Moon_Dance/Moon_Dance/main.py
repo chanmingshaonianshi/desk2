@@ -92,18 +92,18 @@ def run_no_gui(device_count=10, duration=0, interval=1.0, api_url=None, api_toke
     start_time = time.time()
 
     try:
-        while True:
-            current_time = time.time()
-            if duration > 0 and (current_time - start_time) > duration:
-                print(f"\n已运行 {duration} 秒，自动停止...")
-                break
+        with ThreadPoolExecutor(max_workers=min(device_count, 1000)) as executor:
+            while True:
+                current_time = time.time()
+                if duration > 0 and (current_time - start_time) > duration:
+                    print(f"\n已运行 {duration} 秒，自动停止...")
+                    break
 
-            with ThreadPoolExecutor(max_workers=device_count) as executor:
                 futures = [executor.submit(_worker, dev_id) for dev_id in range(1, device_count + 1)]
                 for fut in as_completed(futures):
                     fut.result()
 
-            time.sleep(max(interval, 0))
+                time.sleep(max(interval, 0))
 
     except KeyboardInterrupt:
         print("\n捕获 Ctrl+C，正在停止模拟...")
@@ -126,7 +126,7 @@ def main():
     try:
         parser = argparse.ArgumentParser()
         parser.add_argument("--no-gui", action="store_true", help="Run in headless mode without GUI")
-        parser.add_argument("--device-count", type=int, default=10, help="Number of devices to simulate")
+        parser.add_argument("--device-count", type=int, default=1000, help="Number of devices to simulate")
         parser.add_argument("--duration", type=int, default=0, help="Duration in seconds to run (0 for infinite)")
         parser.add_argument("--interval", type=float, default=1.0, help="Sampling interval in seconds")
         parser.add_argument("--api-url", default=None, help="Remote API endpoint for simulator uploads")

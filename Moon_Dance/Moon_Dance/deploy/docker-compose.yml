@@ -142,6 +142,21 @@ services:
     networks:
       - moondance-net
 
+  # 数据模拟器（自动运行 1000 台设备发数据）
+  simulator:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+      args:
+        PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
+    restart: always
+    command: python3 -u simulator_client.py --api-url http://api:8000/api/v2/ingest --device-count 1000 --interval 1.0
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - moondance-net
+
 volumes:
   redis_data:
   api_data:
