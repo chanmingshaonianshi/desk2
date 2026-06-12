@@ -1,35 +1,75 @@
 <template>
   <div class="page-stack">
-    <div class="metric-grid seller-metrics">
-      <el-card v-for="metric in metrics" :key="metric.label" shadow="never" class="metric-card">
+    <section class="ops-strip">
+      <div v-for="metric in metrics" :key="metric.label" class="ops-strip-item" :class="metric.tone">
         <span>{{ metric.label }}</span>
         <strong>{{ metric.value }}</strong>
         <small>{{ metric.hint }}</small>
-      </el-card>
-    </div>
+      </div>
+      <div class="ops-strip-summary">
+        <span>今日处理重点</span>
+        <strong>{{ todayFocus }}</strong>
+      </div>
+    </section>
 
-    <div class="overview-grid">
-      <el-card shadow="never" class="priority-card">
+    <div class="workbench-grid">
+      <el-card shadow="never" class="follow-card">
         <template #header>
           <div class="card-header">
-            <span>今日运营提醒</span>
-            <el-tag :type="followUpDevices.length ? 'warning' : 'success'">
-              {{ followUpDevices.length ? `${followUpDevices.length} 台待跟进` : "状态良好" }}
+            <div>
+              <span>待跟进设备</span>
+              <p class="card-subtitle">按风险等级和离线时长排序，优先处理高风险设备。</p>
+            </div>
+            <el-tag :type="highRiskCount ? 'danger' : followUpDevices.length ? 'warning' : 'success'">
+              {{ highRiskCount ? `${highRiskCount} 台高风险` : followUpDevices.length ? `${followUpDevices.length} 台待跟进` : "状态稳定" }}
             </el-tag>
           </div>
         </template>
-        <div class="notice-list">
-          <div class="notice-item">
-            <strong>{{ activeRate }}%</strong>
-            <span>当前设备活跃率，优先关注长期离线设备。</span>
+
+        <div class="follow-list" v-if="followUpDevices.length">
+          <div v-for="device in followUpDevices" :key="device.device_id" class="follow-item">
+            <div>
+              <strong>{{ device.device_id }}</strong>
+              <span>{{ device.region }} · {{ device.nickname || "未绑定用户" }}</span>
+            </div>
+            <el-tag :type="device.riskTagType">{{ device.riskLabel }}</el-tag>
+            <small>上报间隔：{{ device.offlineDurationText }}</small>
+            <p>{{ device.operationAdvice }}</p>
           </div>
-          <div class="notice-item">
-            <strong>{{ offlineCount }}</strong>
-            <span>台设备离线，建议售后确认供电、网络或绑定状态。</span>
+        </div>
+        <el-empty v-else description="暂无需要跟进的设备" />
+      </el-card>
+
+      <el-card shadow="never" class="map-card">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <span>地区使用热度</span>
+              <p class="card-subtitle">用于判断各省份设备投放和活跃表现。</p>
+            </div>
+            <el-tag type="info">地图热力图</el-tag>
           </div>
-          <div class="notice-item">
-            <strong>{{ abnormalCount }}</strong>
-            <span>台设备出现坐姿异常，可作为用户使用指导或产品体验回访线索。</span>
+        </template>
+        <ChinaHeatMap :regions="regions" />
+      </el-card>
+    </div>
+
+    <div class="decision-grid">
+      <el-card shadow="never">
+        <template #header>
+          <div class="card-header">
+            <div>
+              <span>运营建议</span>
+              <p class="card-subtitle">根据地区设备数、活跃率和离线情况生成处理方向。</p>
+            </div>
+            <el-tag type="info">Top {{ regionAdviceRows.length }}</el-tag>
+          </div>
+        </template>
+        <div class="region-advice-list">
+          <div v-for="row in regionAdviceRows" :key="row.province" class="region-advice-item">
+            <strong>{{ row.province }}</strong>
+            <span>{{ row.total }} 台设备 · 活跃率 {{ row.activeRate }}% · 离线 {{ row.offline }} 台</span>
+            <p>{{ adviceForRegion(row) }}</p>
           </div>
         </div>
       </el-card>
@@ -37,53 +77,40 @@
       <el-card shadow="never">
         <template #header>
           <div class="card-header">
-            <span>省份使用热度</span>
-            <el-tag type="info">中国地图热力图</el-tag>
+            <div>
+              <span>设备状态摘要</span>
+              <p class="card-subtitle">用于快速判断当前设备资产运行结构。</p>
+            </div>
+            <el-tag type="info">运营口径</el-tag>
           </div>
         </template>
-        <ChinaHeatMap :regions="regions" />
+        <div class="status-board">
+          <div>
+            <span>活跃率</span>
+            <strong>{{ activeRate }}%</strong>
+          </div>
+          <div>
+            <span>离线设备</span>
+            <strong>{{ offlineCount }}</strong>
+          </div>
+          <div>
+            <span>高风险设备</span>
+            <strong>{{ highRiskCount }}</strong>
+          </div>
+          <div>
+            <span>未绑定设备</span>
+            <strong>{{ unboundCount }}</strong>
+          </div>
+        </div>
       </el-card>
     </div>
-
-    <el-card shadow="never">
-      <template #header>
-        <div class="card-header">
-          <span>待跟进设备</span>
-          <span class="muted">离线和异常坐姿设备会优先显示</span>
-        </div>
-      </template>
-      <el-table :data="followUpDevices" stripe border>
-        <el-table-column prop="device_id" label="设备编号" min-width="130" />
-        <el-table-column prop="region" label="地区" width="100" />
-        <el-table-column label="绑定用户" min-width="140">
-          <template #default="{ row }">{{ row.nickname || "未绑定" }}</template>
-        </el-table-column>
-        <el-table-column label="在线状态" width="110">
-          <template #default="{ row }">
-            <el-tag :type="row.is_online ? 'success' : 'danger'">
-              {{ row.is_online ? "在线" : "离线" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="坐姿状态" width="110">
-          <template #default="{ row }">
-            <el-tag :type="row.posture_status === 'normal' ? 'success' : 'warning'">
-              {{ row.posture_status === "normal" ? "正常" : "异常" }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column label="处理建议" min-width="220">
-          <template #default="{ row }">{{ adviceFor(row) }}</template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-if="!followUpDevices.length" description="暂无需要跟进的设备" />
-    </el-card>
   </div>
 </template>
 
 <script setup>
 import { computed } from "vue";
 import ChinaHeatMap from "../components/ChinaHeatMap.vue";
+import { adviceForRegion, buildRegionStats, enrichDevice } from "../utils/operations";
 
 const props = defineProps({
   summary: {
@@ -104,28 +131,34 @@ const registeredCount = computed(() => props.summary.registered_devices || props
 const onlineCount = computed(() => props.summary.online_devices || props.devices.filter((item) => item.is_online).length);
 const offlineCount = computed(() => Math.max(registeredCount.value - onlineCount.value, 0));
 const abnormalCount = computed(() => props.summary.bad_posture_devices || props.devices.filter((item) => item.posture_status !== "normal").length);
+const enrichedDevices = computed(() => props.devices.map((item) => enrichDevice(item)));
+const highRiskCount = computed(() => enrichedDevices.value.filter((item) => item.riskLevel === "high").length);
+const unboundCount = computed(() => enrichedDevices.value.filter((item) => item.boundStatus === "unbound").length);
 const activeRate = computed(() => {
   if (!registeredCount.value) return 0;
   return Math.round((onlineCount.value / registeredCount.value) * 100);
 });
 
 const followUpDevices = computed(() => {
-  return props.devices
-    .filter((item) => !item.is_online || item.posture_status !== "normal")
-    .sort((a, b) => Number(a.is_online) - Number(b.is_online))
+  return enrichedDevices.value
+    .filter((item) => item.riskLevel !== "normal")
+    .sort((a, b) => a.followUpPriority - b.followUpPriority || Number(a.last_update_ms || 0) - Number(b.last_update_ms || 0))
     .slice(0, 8);
 });
 
 const metrics = computed(() => [
-  { label: "已售/已注册设备", value: registeredCount.value, hint: "已绑定或已上报的坐垫" },
-  { label: "活跃设备", value: `${onlineCount.value} 台`, hint: `当前活跃率 ${activeRate.value}%` },
-  { label: "离线待跟进", value: `${offlineCount.value} 台`, hint: "优先检查网络和供电" },
-  { label: "使用异常设备", value: `${abnormalCount.value} 台`, hint: "可用于用户回访和指导" },
+  { label: "已注册设备", value: registeredCount.value, hint: "已绑定或已上报", tone: "neutral" },
+  { label: "活跃设备", value: `${onlineCount.value} 台`, hint: `活跃率 ${activeRate.value}%`, tone: "success" },
+  { label: "离线待查", value: `${offlineCount.value} 台`, hint: "检查网络和供电", tone: "warning" },
+  { label: "高风险设备", value: `${highRiskCount.value} 台`, hint: "优先售后跟进", tone: "danger" },
 ]);
 
-function adviceFor(device) {
-  if (!device.is_online) return "联系客户确认设备供电、网络连接或是否已停止使用";
-  if (device.posture_status !== "normal") return "建议客服回访，指导用户正确摆放坐垫和调整坐姿";
-  return "持续观察";
-}
+const regionAdviceRows = computed(() => buildRegionStats(enrichedDevices.value, props.regions).slice(0, 4));
+
+const todayFocus = computed(() => {
+  if (highRiskCount.value) return "优先处理高风险离线设备";
+  if (offlineCount.value) return "排查离线设备上报状态";
+  if (abnormalCount.value) return "安排异常使用回访";
+  return "维持当前运营节奏";
+});
 </script>

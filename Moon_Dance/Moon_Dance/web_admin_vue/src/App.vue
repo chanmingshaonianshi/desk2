@@ -10,8 +10,8 @@
       <div class="brand">
         <img class="brand-mark" :src="logoUrl" alt="Moon Dance Logo" />
         <div>
-          <strong>Moon Dance</strong>
-          <span>坐垫运营管理台</span>
+          <strong>明月律动</strong>
+          <span>设备运营台</span>
         </div>
       </div>
 
@@ -109,16 +109,16 @@ const logoUrl = `${import.meta.env.BASE_URL}moon-dance-logo.jpg`;
 
 const pageMeta = {
   dashboard: {
-    title: "运营总览",
-    subtitle: "面向售卖方的设备活跃、离线异常、地区投放和售后跟进看板",
+    title: "今日运营",
+    subtitle: "查看待跟进设备、离线风险和地区使用热度，支撑售后与运营决策",
   },
   devices: {
     title: "设备台账",
-    subtitle: "快速查看已售设备运行状态、绑定用户和售后处理建议",
+    subtitle: "按设备状态、地区和风险等级检索已售坐垫，定位需要处理的设备",
   },
   analytics: {
-    title: "数据分析",
-    subtitle: "分析设备使用趋势、省份活跃情况和地区投放效果，辅助运营决策",
+    title: "运营复盘",
+    subtitle: "按时间和省份复盘设备使用情况，判断投放效果与售后重点",
   },
 };
 

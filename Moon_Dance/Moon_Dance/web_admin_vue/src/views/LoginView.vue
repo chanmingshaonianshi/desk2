@@ -1,12 +1,21 @@
 <template>
   <div class="login-page">
-    <el-card class="login-card" shadow="always">
-      <template #header>
-        <div class="login-title">
-          <strong>Moon Dance</strong>
-          <span>坐垫运营管理台</span>
-        </div>
-      </template>
+    <section class="login-intro">
+      <div class="login-kicker">Moon Dance Admin</div>
+      <h1>明月律动设备运营台</h1>
+      <p>面向坐垫售卖方、运营人员和售后人员，集中查看设备运行、地区使用和待跟进设备。</p>
+      <div class="login-capabilities">
+        <span>设备运营</span>
+        <span>地区分析</span>
+        <span>售后跟进</span>
+      </div>
+    </section>
+
+    <el-card class="login-card" shadow="never">
+      <div class="login-title">
+        <strong>管理员登录</strong>
+        <span>登录后可查看设备台账和运营数据</span>
+      </div>
 
       <el-form :model="form" label-position="top" @submit.prevent>
         <el-form-item label="管理员账号">
@@ -22,11 +31,11 @@
             @keyup.enter="submit"
           />
         </el-form-item>
-        <el-form-item label="X-API-Key">
-          <el-input v-model="form.apiKey" placeholder="请输入接口 API Key" />
+        <el-form-item label="接口访问密钥">
+          <el-input v-model="form.apiKey" placeholder="请输入 X-API-Key" />
         </el-form-item>
         <el-button class="login-button" type="primary" :loading="loading" @click="submit">
-          登录
+          进入管理端
         </el-button>
       </el-form>
     </el-card>

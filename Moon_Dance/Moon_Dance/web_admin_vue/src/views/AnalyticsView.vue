@@ -1,11 +1,29 @@
 <template>
   <div class="page-stack">
     <el-alert
-      title="这里展示设备使用趋势和省份运营情况，帮助运营人员判断投放效果、活跃情况和售后跟进重点。"
+      title="这里用于复盘设备使用趋势和省份运营表现，重点关注投放效果、活跃率和售后跟进优先级。"
       type="info"
       show-icon
       :closable="false"
     />
+
+    <div class="analysis-summary">
+      <div>
+        <span>重点省份</span>
+        <strong>{{ topRegion?.province || "暂无" }}</strong>
+        <small>{{ topRegion ? `${topRegion.total} 台设备，活跃率 ${topRegion.activeRate}%` : "等待设备数据" }}</small>
+      </div>
+      <div>
+        <span>离线压力最高</span>
+        <strong>{{ riskRegion?.province || "暂无" }}</strong>
+        <small>{{ riskRegion ? `${riskRegion.offline} 台离线，离线率 ${riskRegion.offlineRate}%` : "暂无离线地区" }}</small>
+      </div>
+      <div>
+        <span>运营建议</span>
+        <strong>{{ primaryAdvice }}</strong>
+        <small>按省份设备数和活跃率自动生成</small>
+      </div>
+    </div>
 
     <div class="panel-grid">
       <el-card shadow="never">
@@ -64,6 +82,7 @@
 import { computed } from "vue";
 import BaseChart from "../components/BaseChart.vue";
 import UserTable from "../components/UserTable.vue";
+import { adviceForRegion, buildRegionStats } from "../utils/operations";
 
 const props = defineProps({
   analytics: {
@@ -136,49 +155,16 @@ function toProvince(region) {
   return regionProvinceMap[text] || text || "未知";
 }
 
-const regionDeviceStats = computed(() => {
-  const stats = new Map();
-
-  function ensure(province) {
-    if (!stats.has(province)) {
-      stats.set(province, { province, total: 0, online: 0, offline: 0 });
-    }
-    return stats.get(province);
-  }
-
-  props.devices.forEach((device) => {
-    const item = ensure(toProvince(device.region));
-    item.total += 1;
-    if (device.is_online) {
-      item.online += 1;
-    } else {
-      item.offline += 1;
-    }
-  });
-
-  props.regions.forEach((region) => {
-    const item = ensure(toProvince(region.name));
-    const total = Number(region.value || 0);
-    if (!props.devices.length) {
-      item.total += total;
-      item.offline = Math.max(item.total - item.online, 0);
-    } else if (total > item.total) {
-      item.total = total;
-      item.offline = Math.max(total - item.online, 0);
-    }
-  });
-
-  return [...stats.values()]
-    .map((item) => ({
-      ...item,
-      activeRate: item.total ? Math.round((item.online / item.total) * 100) : 0,
-    }))
-    .sort((a, b) => b.total - a.total || b.online - a.online);
-});
+const normalizedDevices = computed(() => props.devices.map((device) => ({ ...device, region: toProvince(device.region) })));
+const normalizedRegions = computed(() => props.regions.map((region) => ({ ...region, name: toProvince(region.name) })));
+const regionDeviceStats = computed(() => buildRegionStats(normalizedDevices.value, normalizedRegions.value));
 
 const regionTopRows = computed(() => regionDeviceStats.value.slice(0, 10));
 
 const regionTableRows = computed(() => regionDeviceStats.value);
+const topRegion = computed(() => regionDeviceStats.value[0]);
+const riskRegion = computed(() => [...regionDeviceStats.value].sort((a, b) => b.offlineRate - a.offlineRate || b.offline - a.offline)[0]);
+const primaryAdvice = computed(() => (topRegion.value ? adviceForRegion(topRegion.value) : "暂无运营建议"));
 
 const scoreOption = computed(() => ({
   tooltip: { trigger: "axis" },
@@ -257,10 +243,4 @@ const regionStatusOption = computed(() => ({
   ],
 }));
 
-function adviceForRegion(row) {
-  if (!row.total) return "暂无设备数据，等待设备绑定或上报。";
-  if (row.activeRate >= 70) return "活跃表现较好，可继续扩大投放和渠道覆盖。";
-  if (row.activeRate >= 30) return "活跃率一般，建议结合离线设备做客服回访。";
-  return "活跃率偏低，优先排查网络、供电和售后跟进情况。";
-}
 </script>
