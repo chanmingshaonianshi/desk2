@@ -10,8 +10,9 @@ import os
 import json
 import time
 from celery import Celery
-from src.config.settings import REDIS_URL, UPLOAD_LOG_FILE, PROCESSED_IDS_FILE
+from src.config.settings import REDIS_URL, UPLOAD_LOG_FILE
 from src.utils.json_db import append_record, append_realtime_log, mark_request_processed
+from src.utils.mongo_db import insert_record_async
 
 # 初始化Celery
 celery = Celery(
@@ -54,9 +55,10 @@ def process_upload_data(self, request_id, device_id, timestamp, sensors, analysi
             "process_time": os.times()[4]
         }
         
-        # 写入实时日志与上传日志
-        append_realtime_log(record)
-        append_realtime_log(record, log_file_path=UPLOAD_LOG_FILE)
+        # 写入本地日志，并由 Worker 统一负责写入 MongoDB，避免 API 与 Worker 重复入库。
+        append_realtime_log(record, persist_mongo=False)
+        append_realtime_log(record, log_file_path=UPLOAD_LOG_FILE, persist_mongo=False)
+        insert_record_async(record)
 
         try:
             device_text = str(device_id)

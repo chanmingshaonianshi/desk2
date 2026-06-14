@@ -22,6 +22,23 @@ DB_NAME = os.getenv("MONGO_DB_NAME", "pressure_simulator")
 COLLECTION_NAME = os.getenv("MONGO_COLLECTION_NAME", "pressure_data")
 
 _mongo_client = None
+_indexes_ready = False
+
+
+def ensure_indexes():
+    global _indexes_ready
+    if _indexes_ready:
+        return
+    collection = get_mongo_collection()
+    if collection is None:
+        return
+    try:
+        collection.create_index([("device_id", 1), ("timestamp", -1)], background=True)
+        collection.create_index([("timestamp", -1)], background=True)
+        collection.create_index([("request_id", 1)], background=True)
+        _indexes_ready = True
+    except Exception as e:
+        print(f"[MongoDB] 索引创建失败: {e}")
 
 def get_mongo_collection():
     global _mongo_client
@@ -43,6 +60,7 @@ def get_mongo_collection():
 def _insert_task(record):
     """后台插入数据的线程任务"""
     try:
+        ensure_indexes()
         collection = get_mongo_collection()
         if collection is not None:
             collection.insert_one(record)

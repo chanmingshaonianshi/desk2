@@ -87,7 +87,7 @@ def append_record(device_id, record):
         save_db(data)
 
 
-def append_realtime_log(record, log_file_path=None):
+def append_realtime_log(record, log_file_path=None, persist_mongo=True):
     target_file = log_file_path or REALTIME_LOG_FILE
     target_dir = os.path.dirname(target_file)
     os.makedirs(target_dir, exist_ok=True)
@@ -97,12 +97,12 @@ def append_realtime_log(record, log_file_path=None):
         with open(target_file, 'a', encoding='utf-8', newline='') as f:
             f.write(json.dumps(payload, ensure_ascii=False) + "\n")
             
-    # 异步存储到 MongoDB
-    try:
-        from src.utils.mongo_db import insert_record_async
-        insert_record_async(payload)
-    except Exception as e:
-        print(f"[Log Error] 无法将数据保存到MongoDB: {e}")
+    if persist_mongo:
+        try:
+            from src.utils.mongo_db import insert_record_async
+            insert_record_async(payload)
+        except Exception as e:
+            print(f"[Log Error] 无法将数据保存到MongoDB: {e}")
 
 
 def mark_request_processed(request_id):

@@ -135,7 +135,7 @@ def _extract_sensor_values(record: Dict[str, Any]) -> Tuple[float, float, float,
     return left, right, deviation, is_seated
 
 
-def _latest_records_by_device(limit: int = 2000) -> Dict[str, Dict[str, Any]]:
+def _latest_records_by_device(limit: int = 10000) -> Dict[str, Dict[str, Any]]:
     latest: Dict[str, Dict[str, Any]] = {}
     try:
         cursor = _get_mongo_db()["pressure_data"].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)

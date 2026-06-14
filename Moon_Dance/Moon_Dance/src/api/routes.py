@@ -27,10 +27,38 @@ from src.core.worker import process_upload_data
 api_bp = Blueprint("api", __name__)
 
 _IDS_LOCK = threading.RLock()
+_redis_client = None
 
 
 def _json_error(message: str, status_code: int) -> Tuple[Any, int]:
     return jsonify({"ok": False, "message": message}), status_code
+
+
+def _get_redis_client():
+    global _redis_client
+    if _redis_client is not None:
+        return _redis_client
+    try:
+        import redis
+
+        _redis_client = redis.Redis.from_url(REDIS_URL, decode_responses=True)
+        _redis_client.ping()
+    except Exception:
+        _redis_client = None
+    return _redis_client
+
+
+def _claim_request_id(request_id: str) -> bool:
+    redis_client = _get_redis_client()
+    if redis_client is not None:
+        return bool(redis_client.set(f"moondance:processed:{request_id}", "1", nx=True, ex=24 * 3600))
+
+    processed_ids = _load_processed_ids()
+    if request_id in processed_ids:
+        return False
+    processed_ids.add(request_id)
+    _save_processed_ids(processed_ids)
+    return True
 
 
 def _load_processed_ids() -> Set[str]:
@@ -190,11 +218,10 @@ def _handle_upload_request() -> Tuple[Any, int]:
         return _json_error("request_id 必须是合法 UUID", 400)
 
     request_id_str = str(req_uuid)
-    processed_ids = _load_processed_ids()
-    if request_id_str in processed_ids:
+    if not _claim_request_id(request_id_str):
         return jsonify({"ok": True, "message": "数据已处理", "request_id": request_id_str}), 200
 
-    append_realtime_log(_build_upload_log_record(payload), log_file_path=UPLOAD_LOG_FILE)
+    append_realtime_log(_build_upload_log_record(payload), log_file_path=UPLOAD_LOG_FILE, persist_mongo=False)
 
     # 异步发送到Celery队列处理
     process_upload_data.delay(
@@ -205,10 +232,6 @@ def _handle_upload_request() -> Tuple[Any, int]:
         analysis=payload.get("analysis", {})
     )
     
-    # 先标记请求已处理，避免重复提交
-    processed_ids.add(request_id_str)
-    _save_processed_ids(processed_ids)
-
     return jsonify({"ok": True, "message": "数据已接收，正在异步处理", "request_id": request_id_str}), 202
 
 

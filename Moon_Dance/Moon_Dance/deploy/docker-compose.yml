@@ -71,7 +71,7 @@ services:
     networks:
       - moondance-net
 
-  # 后端API服务（默认3个副本）
+  # 后端API服务（默认4个副本，每个副本4个线程）
   api:
     build:
       context: ..
@@ -79,13 +79,13 @@ services:
       args:
         PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
     restart: always
-    command: python3 -u main_api.py --host 0.0.0.0 --port 8000 --no-ssl
+    command: gunicorn -w 2 --threads 4 -b 0.0.0.0:8000 --timeout 60 --access-logfile - --error-logfile - "main_api:create_app()"
     deploy:
-      replicas: 3
+      replicas: 4
       resources:
         limits:
-          cpus: '0.5'
-          memory: 512M
+          cpus: '0.75'
+          memory: 768M
         reservations:
           cpus: '0.25'
           memory: 256M
@@ -125,7 +125,7 @@ services:
       args:
         PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
     restart: always
-    command: celery -A src.core.worker worker --loglevel=info --concurrency=4
+    command: celery -A src.core.worker worker --loglevel=info --concurrency=8
     environment:
       - REDIS_URL=redis://redis:6379/0
       - MONGO_URI=mongodb://admin:123456@mongodb:27017/
@@ -142,7 +142,7 @@ services:
     networks:
       - moondance-net
 
-  # 数据模拟器（自动运行 1000 台设备发数据）
+  # 数据模拟器（自动运行 2000 台设备发数据）
   simulator:
     build:
       context: ..
@@ -150,7 +150,7 @@ services:
       args:
         PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
     restart: always
-    command: python3 -u simulator_client.py --api-url http://api:8000/api/v2/ingest --device-count 1000 --interval 1.0
+    command: python3 -u simulator_client.py --api-url http://api:8000/api/v2/ingest --device-count 2000 --interval 1.0 --no-local-store
     depends_on:
       api:
         condition: service_started
