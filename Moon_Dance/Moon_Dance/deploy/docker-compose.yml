@@ -149,8 +149,10 @@ services:
       dockerfile: Dockerfile
       args:
         PYTHON_BASE_IMAGE: ${PYTHON_BASE_IMAGE:-docker.m.daocloud.io/library/python:3.9-slim}
-    restart: always
-    command: python3 -u simulator_client.py --api-url http://api:8000/api/v2/ingest --device-count 2000 --interval 1.0 --no-local-store
+    profiles:
+      - simulator
+    restart: "no"
+    command: python3 -u simulator_client.py --api-url http://api:8000/api/v2/ingest --device-count 20 --duration 60 --interval 1.0 --no-local-store
     depends_on:
       api:
         condition: service_started
