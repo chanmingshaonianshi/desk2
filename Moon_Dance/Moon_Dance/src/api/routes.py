@@ -21,7 +21,7 @@ from flask import Blueprint, jsonify, request
 from src.api.auth import api_key_required, token_required
 from src.config.settings import BASE_PATH, PROCESSED_IDS_FILE, UPLOAD_LOG_FILE, UPLOAD_REPORT_DIR, REDIS_URL
 from src.utils.excel_exporter import export_daily_report
-from src.utils.json_db import append_record, append_realtime_log, mark_request_processed
+from src.utils.json_db import append_realtime_log, mark_request_processed
 from src.core.worker import process_upload_data
 
 api_bp = Blueprint("api", __name__)
@@ -132,9 +132,6 @@ def _process_upload(payload: Dict[str, Any]) -> Dict[str, Any]:
     record["f_right"] = f_right
 
     append_realtime_log(record, log_file_path=UPLOAD_LOG_FILE)
-
-    if dev_id > 0:
-        append_record(dev_id, record)
 
     os.makedirs(UPLOAD_REPORT_DIR, exist_ok=True)
     date_str = time.strftime("%Y%m%d")

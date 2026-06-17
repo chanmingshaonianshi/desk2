@@ -750,13 +750,14 @@ echo "当前 user_id=$USER_ID"
 
 echo
 echo "== 3. 运行模拟器，发出 device_001 ~ device_00$SIM_DEVICE_COUNT 的数据 =="
+echo "   说明：服务端上传链路现在只走 MongoDB + MySQL 聚合，不再写 history_data.json。"
 cd ~/desk2/Moon_Dance/Moon_Dance/deploy
 docker compose up -d nginx api worker mongodb mysql >/dev/null 2>&1 || true
 docker compose exec api python3 /app/simulator_client.py \
   --device-count "$SIM_DEVICE_COUNT" \
   --duration "$SIM_DURATION" \
   --interval "$SIM_INTERVAL" \
-  --api-url "https://www.myhjmycjh.tech/api/v2/ingest" \
+  --api-url "http://127.0.0.1:8000/api/v2/ingest" \
   --no-mq \
   --insecure \
   --encrypt

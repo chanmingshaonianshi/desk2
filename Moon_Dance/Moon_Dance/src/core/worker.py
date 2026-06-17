@@ -11,7 +11,7 @@ import json
 import time
 from celery import Celery
 from src.config.settings import REDIS_URL, UPLOAD_LOG_FILE
-from src.utils.json_db import append_record, append_realtime_log, mark_request_processed
+from src.utils.json_db import append_realtime_log, mark_request_processed
 from src.utils.mongo_db import insert_record_async
 
 # 初始化Celery
@@ -60,12 +60,9 @@ def process_upload_data(self, request_id, device_id, timestamp, sensors, analysi
         append_realtime_log(record, log_file_path=UPLOAD_LOG_FILE, persist_mongo=False)
         insert_record_async(record)
 
-        try:
-            device_text = str(device_id)
-            if device_text.startswith("device_") and device_text.split("_", 1)[1].isdigit():
-                append_record(int(device_text.split("_", 1)[1]), record)
-        except Exception:
-            pass
+        # Server-side uploads no longer write the legacy single-file JSON history.
+        # The miniapp flow relies on MongoDB + MySQL aggregation, and the JSON file
+        # becomes corrupt under Celery multi-process concurrency.
         
         # 标记请求已处理（幂等）
         mark_request_processed(request_id)
