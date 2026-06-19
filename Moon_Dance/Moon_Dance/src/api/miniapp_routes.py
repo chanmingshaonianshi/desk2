@@ -582,29 +582,50 @@ def get_leaderboard():
     session = None
     try:
         from src.utils.mysql_db import User, UserDailyStat
-        from sqlalchemy import func
+        from sqlalchemy import and_, func, or_
 
         session = _get_mysql_session()
 
         # ---- 解析查询参数 ----
-        query_date = _parse_date_arg(request.args.get("date"), "date")
+        requested_date = _parse_date_arg(request.args.get("date"), "date")
+        query_date = requested_date
         limit = request.args.get("limit", type=int, default=10)
-        if limit <= 0 or limit > 100:
+        if limit is None or limit <= 0 or limit > 100:
             return _json_error("limit 参数范围必须在 1-100 之间")
 
-        # 默认查询今天的排行榜；如果今天还没有数据，自动回退到昨天
-        if not query_date:
-            today_str = datetime.now().strftime("%Y-%m-%d")
-            yesterday_str = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+        def _latest_stat_date(before_or_on: str | None = None) -> str | None:
+            date_query = session.query(UserDailyStat.date).filter(UserDailyStat.date.isnot(None))
+            if before_or_on:
+                date_query = date_query.filter(UserDailyStat.date <= before_or_on)
+            row = date_query.group_by(UserDailyStat.date).order_by(UserDailyStat.date.desc()).first()
+            return row[0] if row else None
 
+        is_fallback_date = False
+        if query_date:
             count = session.query(func.count(UserDailyStat.id)).filter(
-                UserDailyStat.date == today_str
+                UserDailyStat.date == query_date
             ).scalar()
-            query_date = today_str if count > 0 else yesterday_str
+            if not count:
+                fallback_date = _latest_stat_date(query_date) or _latest_stat_date()
+                if fallback_date:
+                    query_date = fallback_date
+                    is_fallback_date = True
+        else:
+            query_date = _latest_stat_date()
+
+        if not query_date:
+            result = {
+                "requested_date": requested_date,
+                "date": None,
+                "is_fallback_date": False,
+                "total_participants": 0,
+                "leaderboard": [],
+                "my_rank": None,
+                "my_entry": None,
+            }
+            return _json_ok(result, "no leaderboard data")
 
         # ---- 查询排行榜数据（LEFT JOIN users 表） ----
-        from sqlalchemy import outerjoin
-
         results = session.query(
             UserDailyStat, User
         ).outerjoin(
@@ -612,7 +633,10 @@ def get_leaderboard():
         ).filter(
             UserDailyStat.date == query_date
         ).order_by(
-            UserDailyStat.health_score.desc()
+            UserDailyStat.health_score.desc(),
+            UserDailyStat.total_seated_minutes.desc(),
+            UserDailyStat.bad_posture_count.asc(),
+            UserDailyStat.id.asc(),
         ).limit(limit).all()
 
         # ---- 构建排行榜响应 ----
@@ -622,6 +646,7 @@ def get_leaderboard():
                 "rank": rank,
                 "nickname": user.nickname if user else stat.device_id,
                 "avatar_url": user.avatar_url if user else "",
+                "user_id": stat.user_id,
                 "device_id": stat.device_id,
                 "health_score": stat.health_score,
                 "total_seated_minutes": stat.total_seated_minutes,
@@ -637,10 +662,87 @@ def get_leaderboard():
             UserDailyStat.date == query_date
         ).scalar()
 
+        payload = getattr(g, "miniapp_jwt_payload", {})
+        token_uid = payload.get("uid")
+        current_user = None
+        current_stat = None
+        try:
+            current_uid = int(token_uid)
+        except (TypeError, ValueError):
+            current_uid = None
+
+        if current_uid is not None:
+            current_user = session.query(User).filter(User.id == current_uid).first()
+            current_stat = session.query(UserDailyStat).filter(
+                UserDailyStat.date == query_date,
+                UserDailyStat.user_id == current_uid,
+            ).order_by(
+                UserDailyStat.health_score.desc(),
+                UserDailyStat.total_seated_minutes.desc(),
+                UserDailyStat.bad_posture_count.asc(),
+                UserDailyStat.id.asc(),
+            ).first()
+
+            if current_stat is None and current_user and current_user.device_id:
+                current_stat = session.query(UserDailyStat).filter(
+                    UserDailyStat.date == query_date,
+                    UserDailyStat.device_id == current_user.device_id,
+                ).order_by(
+                    UserDailyStat.health_score.desc(),
+                    UserDailyStat.total_seated_minutes.desc(),
+                    UserDailyStat.bad_posture_count.asc(),
+                    UserDailyStat.id.asc(),
+                ).first()
+
+        my_rank = None
+        my_entry = None
+        if current_stat is not None:
+            better_count = session.query(func.count(UserDailyStat.id)).filter(
+                UserDailyStat.date == query_date,
+                or_(
+                    UserDailyStat.health_score > current_stat.health_score,
+                    and_(
+                        UserDailyStat.health_score == current_stat.health_score,
+                        UserDailyStat.total_seated_minutes > current_stat.total_seated_minutes,
+                    ),
+                    and_(
+                        UserDailyStat.health_score == current_stat.health_score,
+                        UserDailyStat.total_seated_minutes == current_stat.total_seated_minutes,
+                        UserDailyStat.bad_posture_count < current_stat.bad_posture_count,
+                    ),
+                    and_(
+                        UserDailyStat.health_score == current_stat.health_score,
+                        UserDailyStat.total_seated_minutes == current_stat.total_seated_minutes,
+                        UserDailyStat.bad_posture_count == current_stat.bad_posture_count,
+                        UserDailyStat.id < current_stat.id,
+                    ),
+                )
+            ).scalar()
+            my_rank = int(better_count or 0) + 1
+            my_entry = {
+                "rank": my_rank,
+                "nickname": current_user.nickname if current_user else current_stat.device_id,
+                "avatar_url": current_user.avatar_url if current_user else "",
+                "user_id": current_stat.user_id,
+                "device_id": current_stat.device_id,
+                "health_score": current_stat.health_score,
+                "total_seated_minutes": current_stat.total_seated_minutes,
+                "bad_posture_count": current_stat.bad_posture_count,
+                "good_posture_ratio": current_stat.good_posture_ratio,
+                "score_breakdown": {
+                    "posture_score": current_stat.posture_score,
+                    "compliance_score": current_stat.compliance_score,
+                }
+            }
+
         result = {
+            "requested_date": requested_date,
             "date": query_date,
+            "is_fallback_date": is_fallback_date,
             "total_participants": total_participants,
-            "leaderboard": leaderboard
+            "leaderboard": leaderboard,
+            "my_rank": my_rank,
+            "my_entry": my_entry,
         }
 
         return _json_ok(result, f"{query_date} 排行榜数据")
