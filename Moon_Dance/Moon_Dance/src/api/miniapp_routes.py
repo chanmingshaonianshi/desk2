@@ -475,6 +475,7 @@ def get_user_stats(user_id: str):
     session = None
     try:
         from src.utils.mysql_db import UserDailyStat
+        from sqlalchemy import or_
 
         session = _get_mysql_session()
         auth_error = _ensure_user_access(user_id)
@@ -494,16 +495,28 @@ def get_user_stats(user_id: str):
         start_date = _parse_date_arg(request.args.get("start"), "start")
         end_date = _parse_date_arg(request.args.get("end"), "end")
 
+        did_fallback = False
         if start_date and end_date:
             if start_date > end_date:
                 return _json_error("start 不能晚于 end")
             date_start = start_date
             date_end = end_date
         else:
+            latest_user_stat = session.query(UserDailyStat.date).filter(
+                or_(
+                    UserDailyStat.user_id == user.id,
+                    UserDailyStat.device_id == user.device_id,
+                )
+            ).order_by(UserDailyStat.date.desc()).first()
             today = datetime.now().date()
-            start = today - timedelta(days=days - 1)
+            end_day = (
+                datetime.strptime(latest_user_stat[0], "%Y-%m-%d").date()
+                if latest_user_stat else today
+            )
+            did_fallback = bool(latest_user_stat and end_day != today)
+            start = end_day - timedelta(days=days - 1)
             date_start = start.strftime("%Y-%m-%d")
-            date_end = today.strftime("%Y-%m-%d")
+            date_end = end_day.strftime("%Y-%m-%d")
 
         # ---- 构建查询 ----
         query = session.query(UserDailyStat).filter(
@@ -511,7 +524,12 @@ def get_user_stats(user_id: str):
             UserDailyStat.date <= date_end
         )
 
-        query = query.filter(UserDailyStat.user_id == user.id)
+        query = query.filter(
+            or_(
+                UserDailyStat.user_id == user.id,
+                UserDailyStat.device_id == user.device_id,
+            )
+        )
 
         records = query.order_by(UserDailyStat.date.asc()).all()
 
@@ -543,6 +561,10 @@ def get_user_stats(user_id: str):
         result = {
             "user_id": str(user.id),
             "nickname": user.nickname,
+            "device_id": user.device_id,
+            "date_start": date_start,
+            "date_end": date_end,
+            "is_fallback_range": did_fallback,
             "query_days": num_days,
             "summary": {
                 "avg_health_score": avg_score,                # 平均健康评分
