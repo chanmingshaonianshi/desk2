@@ -28,6 +28,7 @@ admin_bp = Blueprint("admin", __name__, url_prefix="/api/admin")
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123456")
 ADMIN_TOKEN_EXPIRE_SECONDS = int(os.environ.get("ADMIN_TOKEN_EXPIRE_SECONDS", "7200"))
+ADMIN_DEVICE_LIMIT = int(os.environ.get("ADMIN_DEVICE_LIMIT", "1500"))
 
 REGION_POOL = ["北京", "上海", "广州", "深圳", "杭州", "南京", "成都", "武汉", "西安", "重庆"]
 _mongo_client = None
@@ -135,14 +136,18 @@ def _extract_sensor_values(record: Dict[str, Any]) -> Tuple[float, float, float,
     return left, right, deviation, is_seated
 
 
-def _latest_records_by_device(limit: int = 10000) -> Dict[str, Dict[str, Any]]:
+def _latest_records_by_device(limit: int | None = None) -> Dict[str, Dict[str, Any]]:
     latest: Dict[str, Dict[str, Any]] = {}
+    device_limit = max(1, min(_safe_int(limit if limit is not None else ADMIN_DEVICE_LIMIT, ADMIN_DEVICE_LIMIT), 5000))
+    scan_limit = device_limit * 20
     try:
-        cursor = _get_mongo_db()["pressure_data"].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(limit)
+        cursor = _get_mongo_db()["pressure_data"].find({}, {"_id": 0}).sort("timestamp", DESCENDING).limit(scan_limit)
         for record in cursor:
             device_id = _extract_device_id(record)
             if device_id and device_id not in latest:
                 latest[device_id] = record
+                if len(latest) >= device_limit:
+                    break
     except Exception:
         return latest
     return latest
@@ -261,10 +266,10 @@ def get_devices():
     users = _registered_users()
     now_ms = int(time.time() * 1000)
     user_by_device = {str(getattr(user, "device_id", "") or "").strip(): user for user in users if getattr(user, "device_id", "")}
-    device_ids = set(latest.keys()) | set(user_by_device.keys())
+    device_ids = sorted(set(latest.keys()) | set(user_by_device.keys()))[:ADMIN_DEVICE_LIMIT]
 
     devices = []
-    for device_id in sorted(device_ids):
+    for device_id in device_ids:
         record = latest.get(device_id) or {}
         left, right, deviation, is_seated = _extract_sensor_values(record)
         timestamp = _extract_timestamp(record)
